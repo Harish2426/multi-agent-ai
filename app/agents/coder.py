@@ -1,21 +1,31 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 from app.prompts.coding_prompt import CODING_PROMPT
 
 
-class CodingAgent:
+class CoderAgent:
 
-    def run(self, state: AgentState):
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
 
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
+
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
         prompt = CODING_PROMPT.format(
             question=state["user_input"],
             plan=state["plan"],
-            research=state["research"]
+            research=state["research"],
         )
 
-        code = gemini.generate(prompt)
-
-        state["code"] = code
+        state["code"] = self.get_model().generate(prompt)
 
         state["messages"].append(
             "Coding completed."
@@ -24,4 +34,4 @@ class CodingAgent:
         return state
 
 
-coder = CodingAgent()
+coder = CoderAgent()

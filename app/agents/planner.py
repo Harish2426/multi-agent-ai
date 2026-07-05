@@ -1,19 +1,31 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 from app.prompts.planner_prompt import PLANNER_PROMPT
 
 
 class PlannerAgent:
 
-    def run(self, state: AgentState):
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
 
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
+
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
         prompt = PLANNER_PROMPT.format(
             question=state["user_input"]
         )
 
-        plan = gemini.generate(prompt)
-
-        state["plan"] = plan
+        state["plan"] = self.get_model().generate(
+            prompt
+        )
 
         state["messages"].append(
             "Planner finished."

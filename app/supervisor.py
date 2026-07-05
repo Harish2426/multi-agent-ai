@@ -1,4 +1,5 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 from app.prompts.supervisor_prompt import SUPERVISOR_PROMPT
 
@@ -14,45 +15,20 @@ VALID_ROUTES = {
 
 class SupervisorAgent:
 
-    def is_math_expression(self, question: str) -> bool:
-        """
-        Return True when the request is a plain arithmetic expression.
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
 
-        Examples:
-        45 + 45
-        10 * 5
-        (10 + 5) * 2
-        2 ** 8
-        """
-
-        allowed_characters = set(
-            "0123456789+-*/%.() "
-        )
-
-        text = question.strip()
-
-        return (
-            bool(text)
-            and any(
-                character.isdigit()
-                for character in text
-            )
-            and all(
-                character in allowed_characters
-                for character in text
-            )
-        )
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
 
     def deterministic_route(
         self,
         question: str,
     ) -> str | None:
-
         text = question.lower().strip()
-
-        # Calculator should be checked first.
-        if self.is_math_expression(question):
-            return "calculator"
 
         reviewer_words = (
             "review",
@@ -101,8 +77,14 @@ class SupervisorAgent:
             "approach",
         )
 
-        # Order matters.
-        # Review requests should beat coding keywords.
+        # Local calculator routing.
+        # This keeps obvious arithmetic away from Gemini.
+        calculator_words = (
+            "calculate",
+            "calculator",
+            "compute",
+            "evaluate",
+        )
 
         if any(
             word in text
@@ -128,21 +110,40 @@ class SupervisorAgent:
         ):
             return "planner"
 
+        if any(
+            word in text
+            for word in calculator_words
+        ):
+            return "calculator"
+
+        # Preserve your existing arithmetic detection.
+        arithmetic_characters = set(
+            "0123456789+-*/().% "
+        )
+
+        if (
+            text
+            and any(character.isdigit() for character in text)
+            and all(
+                character in arithmetic_characters
+                for character in text
+            )
+        ):
+            return "calculator"
+
         return None
 
     def llm_route(
         self,
         question: str,
     ) -> str | None:
-
         prompt = SUPERVISOR_PROMPT.format(
             question=question
         )
 
-        decision = gemini.generate(prompt)
-
-        if not decision:
-            return None
+        decision = self.get_model().generate(
+            prompt
+        )
 
         route = decision.strip().lower()
 
@@ -156,7 +157,6 @@ class SupervisorAgent:
         self,
         state: AgentState,
     ) -> AgentState:
-
         question = state["user_input"]
 
         route = self.deterministic_route(

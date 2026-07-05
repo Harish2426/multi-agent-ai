@@ -1,25 +1,35 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 from app.prompts.review_prompt import REVIEW_PROMPT
 
 
 class ReviewerAgent:
 
-    def run(self, state: AgentState):
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
 
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
+
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
         prompt = REVIEW_PROMPT.format(
             question=state["user_input"],
-            plan=state["plan"],
-            research=state["research"],
-            code=state["code"]
+            code=state["code"],
         )
 
-        review = gemini.generate(prompt)
-
-        state["review"] = review
+        state["review"] = self.get_model().generate(
+            prompt
+        )
 
         state["messages"].append(
-            "Reviewer finished."
+            "Review completed."
         )
 
         return state

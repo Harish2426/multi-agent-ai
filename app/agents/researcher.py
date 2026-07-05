@@ -1,23 +1,39 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 
 from app.prompts.research_prompt import RESEARCH_PROMPT
-
 from tools.search import search_tool
 
 
 class ResearchAgent:
 
-    def run(self, state: AgentState):
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
 
-        results = search_tool.search(state["user_input"])
-        print(results)
-        prompt = RESEARCH_PROMPT.format(
-            question=state["user_input"],
-            search_results=results
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
+
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
+
+        results = search_tool.search(
+            state["user_input"]
         )
 
-        research = gemini.generate(prompt)
+        prompt = RESEARCH_PROMPT.format(
+            question=state["user_input"],
+            search_results=results,
+        )
+
+        research = self.get_model().generate(
+            prompt
+        )
 
         state["research"] = research
 

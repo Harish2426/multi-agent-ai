@@ -10,6 +10,13 @@ from app.models import (
     ModelResponseError,
 )
 
+def test_client_is_lazy():
+    client = GeminiClient(
+        api_key=None,
+        model_name="test-model",
+    )
+
+    assert client._client is None
 
 def create_client():
     client = GeminiClient(
@@ -19,7 +26,7 @@ def create_client():
         retry_delay=0,
     )
 
-    client.client = Mock()
+    client._client = Mock()
 
     return client
 
@@ -30,7 +37,7 @@ def test_generate_returns_text():
     response = Mock()
     response.text = "Hello from Gemini"
 
-    client.client.models.generate_content.return_value = (
+    client._client.models.generate_content.return_value = (
         response
     )
 
@@ -45,7 +52,7 @@ def test_empty_response_raises_error():
     response = Mock()
     response.text = ""
 
-    client.client.models.generate_content.return_value = (
+    client._client.models.generate_content.return_value = (
         response
     )
 
@@ -58,7 +65,7 @@ def test_unexpected_error_becomes_model_error():
 
     client = create_client()
 
-    client.client.models.generate_content.side_effect = (
+    client._client.models.generate_content.side_effect = (
         RuntimeError("network failure")
     )
 

@@ -1,4 +1,5 @@
 import time
+from typing import Protocol
 
 from google import genai
 from google.genai import errors
@@ -6,24 +7,33 @@ from google.genai import errors
 from app.config import GEMINI_API_KEY, MODEL_NAME
 
 
+class ModelClient(Protocol):
+    def generate(
+        self,
+        prompt: str,
+        model_name: str | None = None,
+    ) -> str:
+        ...
+
+
 class ModelError(Exception):
     """Base exception for model failures."""
 
 
 class ModelQuotaError(ModelError):
-    """Raised when Gemini quota or rate limits are exhausted."""
+    """Gemini quota or rate limit exhausted."""
 
 
 class ModelUnavailableError(ModelError):
-    """Raised when Gemini remains unavailable after retries."""
+    """Gemini unavailable after retries."""
 
 
 class ModelAuthenticationError(ModelError):
-    """Raised when the Gemini API key is invalid or unauthorized."""
+    """Gemini credentials missing or invalid."""
 
 
 class ModelResponseError(ModelError):
-    """Raised when Gemini returns an empty or unusable response."""
+    """Gemini returned an unusable response."""
 
 
 class GeminiClient:
@@ -35,31 +45,43 @@ class GeminiClient:
         max_retries: int = 2,
         retry_delay: float = 2.0,
     ):
-        resolved_api_key = api_key or GEMINI_API_KEY
+        self.api_key = api_key
+        self.model_name = (
+            model_name
+            or MODEL_NAME
+            or "gemini-2.0-flash"
+        )
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+        self._client = None
+
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
+
+        resolved_api_key = (
+            self.api_key
+            or GEMINI_API_KEY
+        )
 
         if not resolved_api_key:
             raise ModelAuthenticationError(
                 "GEMINI_API_KEY is missing."
             )
 
-        self.client = genai.Client(
+        self._client = genai.Client(
             api_key=resolved_api_key
         )
 
-        self.model_name = (
-            model_name
-            or MODEL_NAME
-            or "gemini-2.0-flash"
-        )
-
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        return self._client
 
     def generate(
         self,
         prompt: str,
         model_name: str | None = None,
     ) -> str:
+        client = self._get_client()
 
         selected_model = (
             model_name
@@ -71,7 +93,7 @@ class GeminiClient:
         ):
             try:
                 response = (
-                    self.client.models.generate_content(
+                    client.models.generate_content(
                         model=selected_model,
                         contents=prompt,
                     )
@@ -101,8 +123,7 @@ class GeminiClient:
 
                 if status_code in (401, 403):
                     raise ModelAuthenticationError(
-                        "Gemini authentication failed. "
-                        "Check your API key."
+                        "Gemini authentication failed."
                     ) from error
 
                 raise ModelError(
@@ -120,12 +141,10 @@ class GeminiClient:
                     status_code == 503
                     and attempt < self.max_retries
                 ):
-                    delay = (
+                    time.sleep(
                         self.retry_delay
                         * (2 ** attempt)
                     )
-
-                    time.sleep(delay)
                     continue
 
                 if status_code == 503:

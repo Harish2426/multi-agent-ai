@@ -1,15 +1,28 @@
-from app.models import gemini
+from app.dependencies import get_model_client
+from app.models import ModelClient
 from app.state import AgentState
 from app.prompts.writer_prompt import WRITER_PROMPT
 
 
 class WriterAgent:
 
-    def run(self, state: AgentState) -> AgentState:
+    def __init__(
+        self,
+        model: ModelClient | None = None,
+    ):
+        self.model = model
+
+    def get_model(self) -> ModelClient:
+        return self.model or get_model_client()
+
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
 
         memories = state.get(
             "memories",
-            []
+            [],
         )
 
         memory_context = (
@@ -27,9 +40,9 @@ class WriterAgent:
             review=state["review"],
         )
 
-        answer = gemini.generate(prompt)
-
-        state["final_answer"] = answer
+        state["final_answer"] = (
+            self.get_model().generate(prompt)
+        )
 
         state["messages"].append(
             "Writer completed."
