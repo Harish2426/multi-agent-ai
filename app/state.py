@@ -14,4 +14,6 @@ class AgentState(TypedDict):
 
     tool_result: str
 
+    memories: list[str]
+
     final_answer: str

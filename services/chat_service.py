@@ -14,12 +14,18 @@ class ChatService:
         return {
             "user_input": message,
             "messages": [],
+
             "route": "",
+
             "plan": "",
             "research": "",
             "code": "",
             "review": "",
+
             "tool_result": "",
+
+            "memories": [],
+
             "final_answer": "",
         }
 
@@ -40,6 +46,7 @@ class ChatService:
             }
 
         except ModelError as error:
+
             return {
                 "response": model_error_message(error),
                 "route": "error",

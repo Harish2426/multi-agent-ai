@@ -5,14 +5,26 @@ from app.prompts.writer_prompt import WRITER_PROMPT
 
 class WriterAgent:
 
-    def run(self, state: AgentState):
+    def run(self, state: AgentState) -> AgentState:
+
+        memories = state.get(
+            "memories",
+            []
+        )
+
+        memory_context = (
+            "\n\n".join(memories)
+            if memories
+            else "No relevant previous conversations."
+        )
 
         prompt = WRITER_PROMPT.format(
             question=state["user_input"],
+            memories=memory_context,
             plan=state["plan"],
             research=state["research"],
             code=state["code"],
-            review=state["review"]
+            review=state["review"],
         )
 
         answer = gemini.generate(prompt)

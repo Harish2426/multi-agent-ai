@@ -1,43 +1,66 @@
+from uuid import uuid4
+
 import chromadb
-from sentence_transformers import SentenceTransformer
 
 
-class Memory:
+class ConversationMemory:
 
-    def __init__(self):
-
+    def __init__(
+        self,
+        path: str = "database/vector_db",
+        collection_name: str = "conversations",
+    ):
         self.client = chromadb.PersistentClient(
-            path="database/vector_db"
+            path=path
         )
 
-        self.collection = self.client.get_or_create_collection(
-            "memory"
+        self.collection = (
+            self.client.get_or_create_collection(
+                name=collection_name
+            )
         )
 
-        self.model = SentenceTransformer(
-            "all-MiniLM-L6-v2"
+    def add(
+        self,
+        user_input: str,
+        assistant_response: str,
+    ) -> None:
+
+        document = (
+            f"User: {user_input}\n"
+            f"Assistant: {assistant_response}"
         )
-
-    def add(self, text):
-
-        embedding = self.model.encode(text).tolist()
 
         self.collection.add(
-            ids=[str(self.collection.count())],
-            documents=[text],
-            embeddings=[embedding]
+            ids=[str(uuid4())],
+            documents=[document],
+            metadatas=[
+                {
+                    "user_input": user_input,
+                }
+            ],
         )
 
-    def search(self, query):
+    def search(
+        self,
+        query: str,
+        limit: int = 3,
+    ) -> list[str]:
 
-        embedding = self.model.encode(query).tolist()
+        if self.collection.count() == 0:
+            return []
 
         result = self.collection.query(
-            query_embeddings=[embedding],
-            n_results=3
+            query_texts=[query],
+            n_results=limit,
         )
 
-        return result["documents"][0]
+        documents = result.get("documents")
+
+        if not documents:
+            return []
+
+        return documents[0]
 
 
-memory = Memory()
+memory = ConversationMemory()
