@@ -1,12 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from api.schemas import (
     ChatRequest,
     ChatResponse,
     ConversationHistoryResponse,
     DeleteConversationResponse,
+    HealthResponse,
+    ReadinessResponse,
 )
 
+from database.memory import memory
 from services.chat_service import chat_service
 from services.memory_service import memory_service
 
@@ -14,24 +17,40 @@ from services.memory_service import memory_service
 router = APIRouter()
 
 
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+)
+def health():
+    return HealthResponse(
+        status="ok"
+    )
+
+
+@router.get(
+    "/ready",
+    response_model=ReadinessResponse,
+)
+def ready():
+    memory.collection.count()
+
+    return ReadinessResponse(
+        status="ready",
+        memory="available",
+    )
+
+
 @router.post(
     "/chat",
     response_model=ChatResponse,
 )
 def chat(request: ChatRequest):
-    try:
-        result = chat_service.chat(
-            message=request.message,
-            conversation_id=request.conversation_id,
-        )
+    result = chat_service.chat(
+        message=request.message,
+        conversation_id=request.conversation_id,
+    )
 
-        return ChatResponse(**result)
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Chat request failed.",
-        )
+    return ChatResponse(**result)
 
 
 @router.get(
@@ -41,21 +60,14 @@ def chat(request: ChatRequest):
 def get_conversation_history(
     conversation_id: str,
 ):
-    try:
-        history = memory_service.get_history(
-            conversation_id=conversation_id
-        )
+    history = memory_service.get_history(
+        conversation_id=conversation_id
+    )
 
-        return ConversationHistoryResponse(
-            conversation_id=conversation_id,
-            history=history,
-        )
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to retrieve conversation history.",
-        )
+    return ConversationHistoryResponse(
+        conversation_id=conversation_id,
+        history=history,
+    )
 
 
 @router.delete(
@@ -65,20 +77,13 @@ def get_conversation_history(
 def delete_conversation(
     conversation_id: str,
 ):
-    try:
-        deleted_count = (
-            memory_service.delete_conversation(
-                conversation_id=conversation_id
-            )
+    deleted_count = (
+        memory_service.delete_conversation(
+            conversation_id=conversation_id
         )
+    )
 
-        return DeleteConversationResponse(
-            conversation_id=conversation_id,
-            deleted_count=deleted_count,
-        )
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to delete conversation.",
-        )
+    return DeleteConversationResponse(
+        conversation_id=conversation_id,
+        deleted_count=deleted_count,
+    )

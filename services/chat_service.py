@@ -31,13 +31,12 @@ class ChatService:
 
             "final_answer": "",
         }
-
+    
     def chat(
-        self,
-        message: str,
-        conversation_id: str | None = None,
+    self,
+    message: str,
+    conversation_id: str | None = None,
     ) -> dict:
-
         resolved_conversation_id = (
             conversation_id
             or str(uuid4())
@@ -48,25 +47,14 @@ class ChatService:
             conversation_id=resolved_conversation_id,
         )
 
-        try:
-            result = graph.invoke(state)
+        result = graph.invoke(state)
 
-            return {
-                "response": result["final_answer"],
-                "route": result["route"],
-                "messages": result["messages"],
-                "conversation_id": resolved_conversation_id,
-            }
-
-        except ModelError as error:
-            return {
-                "response": model_error_message(error),
-                "route": "error",
-                "messages": [
-                    f"Model failure: {type(error).__name__}"
-                ],
-                "conversation_id": resolved_conversation_id,
-            }
+        return {
+            "response": result["final_answer"],
+            "route": result["route"],
+            "messages": result["messages"],
+            "conversation_id": resolved_conversation_id,
+        }
 
 
 chat_service = ChatService()
