@@ -1,35 +1,37 @@
-import { useEffect, useState } from "react";
-
-import { getHealth } from "./api/chatApi";
-
+import ChatWindow from "./components/ChatWindow";
+import Sidebar from "./components/Sidebar";
+import { useChat } from "./hooks/useChat";
 
 function App() {
-  const [status, setStatus] = useState("checking");
-
-  useEffect(() => {
-    async function checkApi() {
-      try {
-        const result = await getHealth();
-        setStatus(result.status);
-      } catch (error) {
-        console.error("API health check failed:", error);
-        setStatus("unavailable");
-      }
-    }
-
-    checkApi();
-  }, []);
+  const {
+    conversationId,
+    messages,
+    isLoading,
+    isHistoryLoading,
+    error,
+    submitMessage,
+    startNewChat,
+    removeConversation,
+  } = useChat();
 
   return (
-    <main>
-      <h1>Multi-Agent AI</h1>
+    <div className="app-shell">
+      <Sidebar
+        conversationId={conversationId}
+        onNewChat={startNewChat}
+        onDelete={removeConversation}
+        disabled={isLoading || isHistoryLoading}
+      />
 
-      <p>
-        API status: <strong>{status}</strong>
-      </p>
-    </main>
+      <ChatWindow
+        messages={messages}
+        error={error}
+        isLoading={isLoading}
+        isHistoryLoading={isHistoryLoading}
+        onSubmit={submitMessage}
+      />
+    </div>
   );
 }
-
 
 export default App;
