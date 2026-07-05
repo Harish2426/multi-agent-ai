@@ -19,7 +19,6 @@ class CalculatorAgent:
 
         except Exception as error:
             state["tool_result"] = ""
-
             state["final_answer"] = (
                 f"Calculator error: {error}"
             )
