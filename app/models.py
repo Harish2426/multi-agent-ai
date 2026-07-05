@@ -1,48 +1,154 @@
+import time
+
 from google import genai
 from google.genai import errors
 
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, MODEL_NAME
 
-import time
+
+class ModelError(Exception):
+    """Base exception for model failures."""
+
+
+class ModelQuotaError(ModelError):
+    """Raised when Gemini quota or rate limits are exhausted."""
+
+
+class ModelUnavailableError(ModelError):
+    """Raised when Gemini remains unavailable after retries."""
+
+
+class ModelAuthenticationError(ModelError):
+    """Raised when the Gemini API key is invalid or unauthorized."""
+
+
+class ModelResponseError(ModelError):
+    """Raised when Gemini returns an empty or unusable response."""
 
 
 class GeminiClient:
 
-    def __init__(self):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 2.0,
+    ):
+        resolved_api_key = api_key or GEMINI_API_KEY
 
-        if not GEMINI_API_KEY:
-            raise ValueError(
-                "GEMINI_API_KEY not found in .env"
+        if not resolved_api_key:
+            raise ModelAuthenticationError(
+                "GEMINI_API_KEY is missing."
             )
 
         self.client = genai.Client(
-            api_key=GEMINI_API_KEY
+            api_key=resolved_api_key
         )
 
-    def generate(self, prompt):
+        self.model_name = (
+            model_name
+            or MODEL_NAME
+            or "gemini-2.0-flash"
+        )
 
-        for attempt in range(3):
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
+    def generate(
+        self,
+        prompt: str,
+        model_name: str | None = None,
+    ) -> str:
+
+        selected_model = (
+            model_name
+            or self.model_name
+        )
+
+        for attempt in range(
+            self.max_retries + 1
+        ):
             try:
-
-                response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt
+                response = (
+                    self.client.models.generate_content(
+                        model=selected_model,
+                        contents=prompt,
+                    )
                 )
 
-                return response.text
+                text = response.text
 
-            except errors.ServerError:
+                if not text or not text.strip():
+                    raise ModelResponseError(
+                        "Gemini returned an empty response."
+                    )
 
-                if attempt < 2:
-                    time.sleep(2)
+                return text.strip()
+
+            except errors.ClientError as error:
+                status_code = getattr(
+                    error,
+                    "code",
+                    None,
+                )
+
+                if status_code == 429:
+                    raise ModelQuotaError(
+                        "Gemini quota is exhausted or "
+                        "the rate limit was exceeded."
+                    ) from error
+
+                if status_code in (401, 403):
+                    raise ModelAuthenticationError(
+                        "Gemini authentication failed. "
+                        "Check your API key."
+                    ) from error
+
+                raise ModelError(
+                    f"Gemini client error: {error}"
+                ) from error
+
+            except errors.ServerError as error:
+                status_code = getattr(
+                    error,
+                    "code",
+                    None,
+                )
+
+                if (
+                    status_code == 503
+                    and attempt < self.max_retries
+                ):
+                    delay = (
+                        self.retry_delay
+                        * (2 ** attempt)
+                    )
+
+                    time.sleep(delay)
                     continue
 
-                return "Gemini server is busy. Please try again."
+                if status_code == 503:
+                    raise ModelUnavailableError(
+                        "Gemini is temporarily unavailable "
+                        "after retry attempts."
+                    ) from error
 
-            except Exception as e:
+                raise ModelError(
+                    f"Gemini server error: {error}"
+                ) from error
 
-                return f"Error: {e}"
+            except ModelError:
+                raise
+
+            except Exception as error:
+                raise ModelError(
+                    f"Unexpected Gemini error: {error}"
+                ) from error
+
+        raise ModelUnavailableError(
+            "Gemini request failed."
+        )
 
 
 gemini = GeminiClient()

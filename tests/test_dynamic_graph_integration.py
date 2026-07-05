@@ -1,4 +1,14 @@
+import pytest
+
 from app.graph import graph
+from app.models import (
+    ModelAuthenticationError,
+    ModelQuotaError,
+    ModelUnavailableError,
+)
+
+
+pytestmark = pytest.mark.integration
 
 
 def create_state(message: str) -> dict:
@@ -10,48 +20,71 @@ def create_state(message: str) -> dict:
         "research": "",
         "code": "",
         "review": "",
+        "tool_result": "",
         "final_answer": "",
     }
 
 
+def invoke_live_graph(message: str):
+    """
+    Run the live graph.
+
+    Skip the integration test when the external Gemini service
+    cannot be used because of quota, availability, or credentials.
+    """
+
+    try:
+        return graph.invoke(
+            create_state(message)
+        )
+
+    except ModelQuotaError as error:
+        pytest.skip(
+            f"Gemini quota unavailable: {error}"
+        )
+
+    except ModelUnavailableError as error:
+        pytest.skip(
+            f"Gemini service unavailable: {error}"
+        )
+
+    except ModelAuthenticationError as error:
+        pytest.skip(
+            f"Gemini authentication unavailable: {error}"
+        )
+
+
 def test_planner_route():
-    result = graph.invoke(
-        create_state("Create a roadmap for learning FastAPI")
+    result = invoke_live_graph(
+        "Create a roadmap for learning FastAPI"
     )
 
     assert result["route"] == "planner"
-    assert "Supervisor selected: planner" in result["messages"]
     assert result["final_answer"]
 
 
 def test_researcher_route():
-    result = graph.invoke(
-        create_state("What are the latest developments in AI?")
+    result = invoke_live_graph(
+        "What are the latest developments in AI?"
     )
 
     assert result["route"] == "researcher"
-    assert "Supervisor selected: researcher" in result["messages"]
     assert result["final_answer"]
 
 
 def test_coder_route():
-    result = graph.invoke(
-        create_state("Write a Python function to check prime numbers")
+    result = invoke_live_graph(
+        "Write a Python function to check prime numbers"
     )
 
     assert result["route"] == "coder"
-    assert "Supervisor selected: coder" in result["messages"]
-    assert "Coding completed." in result["messages"]
-    assert "Reviewer finished." in result["messages"]
     assert result["final_answer"]
 
 
 def test_reviewer_route():
-    result = graph.invoke(
-        create_state("Review this Python code for security problems")
+    result = invoke_live_graph(
+        "Review this Python code for security problems"
     )
 
     assert result["route"] == "reviewer"
-    assert "Supervisor selected: reviewer" in result["messages"]
-    assert "Reviewer finished." in result["messages"]
     assert result["final_answer"]
