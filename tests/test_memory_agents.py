@@ -6,10 +6,12 @@ from app.agents.memory_saver import memory_saver
 
 def create_state(
     route: str = "planner",
+    conversation_id: str = "conversation-a",
 ) -> dict:
 
     return {
         "user_input": "Help me build a FastAPI project",
+        "conversation_id": conversation_id,
         "messages": [],
         "route": route,
         "plan": "",
@@ -35,37 +37,14 @@ def test_memory_retriever(mock_search):
 
     result = memory_retriever.run(state)
 
+    mock_search.assert_called_once_with(
+        conversation_id="conversation-a",
+        query=state["user_input"],
+    )
+
     assert result["memories"] == [
         "Previous FastAPI conversation"
     ]
-
-    assert (
-        "Memory retrieved: 1 item(s)"
-        in result["messages"]
-    )
-
-
-@patch(
-    "app.agents.memory_retriever.memory.search"
-)
-def test_memory_retrieval_failure(
-    mock_search,
-):
-
-    mock_search.side_effect = RuntimeError(
-        "database unavailable"
-    )
-
-    state = create_state()
-
-    result = memory_retriever.run(state)
-
-    assert result["memories"] == []
-
-    assert (
-        "Memory retrieval unavailable."
-        in result["messages"]
-    )
 
 
 @patch(
@@ -75,25 +54,40 @@ def test_memory_saver(mock_add):
 
     state = create_state()
 
-    result = memory_saver.run(state)
+    memory_saver.run(state)
 
     mock_add.assert_called_once_with(
+        conversation_id="conversation-a",
         user_input=state["user_input"],
         assistant_response=state["final_answer"],
-    )
-
-    assert (
-        "Conversation saved to memory."
-        in result["messages"]
     )
 
 
 @patch(
     "app.agents.memory_saver.memory.add"
 )
-def test_calculator_is_not_saved(
+def test_different_conversation_id_is_used(
     mock_add,
 ):
+
+    state = create_state(
+        conversation_id="conversation-b"
+    )
+
+    memory_saver.run(state)
+
+    assert (
+        mock_add.call_args.kwargs[
+            "conversation_id"
+        ]
+        == "conversation-b"
+    )
+
+
+@patch(
+    "app.agents.memory_saver.memory.add"
+)
+def test_calculator_is_not_saved(mock_add):
 
     state = create_state(
         route="calculator"

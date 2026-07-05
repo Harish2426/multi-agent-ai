@@ -3,8 +3,9 @@ from typing import TypedDict
 
 class AgentState(TypedDict):
     user_input: str
-    messages: list[str]
+    conversation_id: str
 
+    messages: list[str]
     route: str
 
     plan: str
@@ -13,7 +14,6 @@ class AgentState(TypedDict):
     review: str
 
     tool_result: str
-
     memories: list[str]
 
     final_answer: str

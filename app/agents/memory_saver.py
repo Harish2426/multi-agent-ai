@@ -4,13 +4,30 @@ from database.memory import memory
 
 class MemorySaver:
 
-    def run(self, state: AgentState) -> AgentState:
-        try:
-            final_answer = state.get("final_answer", "").strip()
-            route = state.get("route", "")
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
 
-            if final_answer and route != "calculator":
+        try:
+            final_answer = state.get(
+                "final_answer",
+                "",
+            ).strip()
+
+            route = state.get(
+                "route",
+                "",
+            )
+
+            if (
+                final_answer
+                and route != "calculator"
+            ):
                 memory.add(
+                    conversation_id=state[
+                        "conversation_id"
+                    ],
                     user_input=state["user_input"],
                     assistant_response=final_answer,
                 )

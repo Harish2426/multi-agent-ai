@@ -4,10 +4,15 @@ from database.memory import memory
 
 class MemoryRetriever:
 
-    def run(self, state: AgentState) -> AgentState:
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
+
         try:
             memories = memory.search(
-                state["user_input"]
+                conversation_id=state["conversation_id"],
+                query=state["user_input"],
             )
 
             state["memories"] = memories

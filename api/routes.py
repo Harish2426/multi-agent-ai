@@ -9,13 +9,16 @@ router = APIRouter()
 
 @router.post(
     "/chat",
-    response_model=ChatResponse
+    response_model=ChatResponse,
 )
-def chat(request: ChatRequest):
+def chat(
+    request: ChatRequest,
+):
 
     try:
         result = chat_service.chat(
-            request.message
+            message=request.message,
+            conversation_id=request.conversation_id,
         )
 
         return ChatResponse(**result)
@@ -23,5 +26,5 @@ def chat(request: ChatRequest):
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=str(error)
+            detail=str(error),
         )

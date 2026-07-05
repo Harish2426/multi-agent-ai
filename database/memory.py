@@ -22,6 +22,7 @@ class ConversationMemory:
 
     def add(
         self,
+        conversation_id: str,
         user_input: str,
         assistant_response: str,
     ) -> None:
@@ -36,6 +37,7 @@ class ConversationMemory:
             documents=[document],
             metadatas=[
                 {
+                    "conversation_id": conversation_id,
                     "user_input": user_input,
                 }
             ],
@@ -43,6 +45,7 @@ class ConversationMemory:
 
     def search(
         self,
+        conversation_id: str,
         query: str,
         limit: int = 3,
     ) -> list[str]:
@@ -53,6 +56,9 @@ class ConversationMemory:
         result = self.collection.query(
             query_texts=[query],
             n_results=limit,
+            where={
+                "conversation_id": conversation_id
+            },
         )
 
         documents = result.get("documents")

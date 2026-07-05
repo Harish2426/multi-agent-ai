@@ -7,6 +7,7 @@ from app.graph import graph
 def create_state(message: str) -> dict:
     return {
         "user_input": message,
+        "conversation_id": "test-conversation",
         "messages": [],
         "route": "",
         "plan": "",

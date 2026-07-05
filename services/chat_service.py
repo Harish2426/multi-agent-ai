@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from app.graph import graph
 from app.models import ModelError
 
@@ -9,12 +11,14 @@ class ChatService:
     def create_state(
         self,
         message: str,
+        conversation_id: str,
     ) -> dict:
 
         return {
             "user_input": message,
-            "messages": [],
+            "conversation_id": conversation_id,
 
+            "messages": [],
             "route": "",
 
             "plan": "",
@@ -23,7 +27,6 @@ class ChatService:
             "review": "",
 
             "tool_result": "",
-
             "memories": [],
 
             "final_answer": "",
@@ -32,9 +35,18 @@ class ChatService:
     def chat(
         self,
         message: str,
+        conversation_id: str | None = None,
     ) -> dict:
 
-        state = self.create_state(message)
+        resolved_conversation_id = (
+            conversation_id
+            or str(uuid4())
+        )
+
+        state = self.create_state(
+            message=message,
+            conversation_id=resolved_conversation_id,
+        )
 
         try:
             result = graph.invoke(state)
@@ -43,16 +55,17 @@ class ChatService:
                 "response": result["final_answer"],
                 "route": result["route"],
                 "messages": result["messages"],
+                "conversation_id": resolved_conversation_id,
             }
 
         except ModelError as error:
-
             return {
                 "response": model_error_message(error),
                 "route": "error",
                 "messages": [
                     f"Model failure: {type(error).__name__}"
                 ],
+                "conversation_id": resolved_conversation_id,
             }
 
 
