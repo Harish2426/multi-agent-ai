@@ -10,14 +10,10 @@ class ConversationMemory:
         path: str = "database/vector_db",
         collection_name: str = "conversations",
     ):
-        self.client = chromadb.PersistentClient(
-            path=path
-        )
+        self.client = chromadb.PersistentClient(path=path)
 
-        self.collection = (
-            self.client.get_or_create_collection(
-                name=collection_name
-            )
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name
         )
 
     def add(
@@ -26,6 +22,7 @@ class ConversationMemory:
         user_input: str,
         assistant_response: str,
     ) -> None:
+        document_id = str(uuid4())
 
         document = (
             f"User: {user_input}\n"
@@ -33,7 +30,7 @@ class ConversationMemory:
         )
 
         self.collection.add(
-            ids=[str(uuid4())],
+            ids=[document_id],
             documents=[document],
             metadatas=[
                 {
@@ -49,7 +46,6 @@ class ConversationMemory:
         query: str,
         limit: int = 3,
     ) -> list[str]:
-
         if self.collection.count() == 0:
             return []
 
@@ -67,6 +63,61 @@ class ConversationMemory:
             return []
 
         return documents[0]
+
+    def history(
+        self,
+        conversation_id: str,
+    ) -> list[dict]:
+        result = self.collection.get(
+            where={
+                "conversation_id": conversation_id
+            },
+            include=[
+                "documents",
+                "metadatas",
+            ],
+        )
+
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+
+        history_items = []
+
+        for document_id, document, metadata in zip(
+            ids,
+            documents,
+            metadatas,
+        ):
+            history_items.append(
+                {
+                    "id": document_id,
+                    "document": document,
+                    "metadata": metadata or {},
+                }
+            )
+
+        return history_items
+
+    def delete_conversation(
+        self,
+        conversation_id: str,
+    ) -> int:
+        existing = self.collection.get(
+            where={
+                "conversation_id": conversation_id
+            },
+            include=[],
+        )
+
+        ids = existing.get("ids") or []
+
+        if not ids:
+            return 0
+
+        self.collection.delete(ids=ids)
+
+        return len(ids)
 
 
 memory = ConversationMemory()

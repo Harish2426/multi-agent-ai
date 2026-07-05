@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -15,5 +15,21 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     route: str
-    messages: List[str]
+    messages: list[str]
     conversation_id: str
+
+
+class HistoryItem(BaseModel):
+    id: str
+    document: str
+    metadata: dict[str, Any]
+
+
+class ConversationHistoryResponse(BaseModel):
+    conversation_id: str
+    history: list[HistoryItem]
+
+
+class DeleteConversationResponse(BaseModel):
+    conversation_id: str
+    deleted_count: int
