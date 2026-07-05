@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import chromadb
@@ -16,27 +17,63 @@ class ConversationMemory:
             name=collection_name
         )
 
+    def _next_sequence(
+        self,
+        conversation_id: str,
+    ) -> int:
+        result = self.collection.get(
+            where={
+                "conversation_id": conversation_id
+            },
+            include=["metadatas"],
+        )
+
+        metadatas = result.get("metadatas") or []
+
+        sequences = [
+            metadata.get("sequence", 0)
+            for metadata in metadatas
+            if metadata
+        ]
+
+        return max(sequences, default=0) + 1
+
     def add(
         self,
         conversation_id: str,
         user_input: str,
         assistant_response: str,
     ) -> None:
-        document_id = str(uuid4())
-
-        document = (
-            f"User: {user_input}\n"
-            f"Assistant: {assistant_response}"
+        first_sequence = self._next_sequence(
+            conversation_id
         )
 
+        timestamp = datetime.now(
+            timezone.utc
+        ).isoformat()
+
         self.collection.add(
-            ids=[document_id],
-            documents=[document],
+            ids=[
+                str(uuid4()),
+                str(uuid4()),
+            ],
+            documents=[
+                user_input,
+                assistant_response,
+            ],
             metadatas=[
                 {
                     "conversation_id": conversation_id,
-                    "user_input": user_input,
-                }
+                    "role": "user",
+                    "timestamp": timestamp,
+                    "sequence": first_sequence,
+                },
+                {
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "timestamp": timestamp,
+                    "sequence": first_sequence + 1,
+                },
             ],
         )
 
@@ -57,7 +94,7 @@ class ConversationMemory:
             },
         )
 
-        documents = result.get("documents")
+        documents = result.get("documents") or []
 
         if not documents:
             return []
@@ -89,13 +126,29 @@ class ConversationMemory:
             documents,
             metadatas,
         ):
+            metadata = metadata or {}
+
+            # Ignore legacy records created before structured memory.
+            if (
+                "role" not in metadata
+                or "timestamp" not in metadata
+                or "sequence" not in metadata
+            ):
+                continue
+
             history_items.append(
                 {
                     "id": document_id,
-                    "document": document,
-                    "metadata": metadata or {},
+                    "role": metadata["role"],
+                    "content": document,
+                    "timestamp": metadata["timestamp"],
+                    "sequence": metadata["sequence"],
                 }
             )
+
+        history_items.sort(
+            key=lambda item: item["sequence"]
+        )
 
         return history_items
 

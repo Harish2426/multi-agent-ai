@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,8 +21,10 @@ class ChatResponse(BaseModel):
 
 class HistoryItem(BaseModel):
     id: str
-    document: str
-    metadata: dict[str, Any]
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: str
+    sequence: int
 
 
 class ConversationHistoryResponse(BaseModel):

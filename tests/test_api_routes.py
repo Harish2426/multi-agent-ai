@@ -14,16 +14,19 @@ client = TestClient(app)
 def test_history_endpoint(mock_history):
     mock_history.return_value = [
         {
-            "id": "memory-1",
-            "document": (
-                "User: Hello\n"
-                "Assistant: Hi"
-            ),
-            "metadata": {
-                "conversation_id": "conversation-a",
-                "user_input": "Hello",
-            },
-        }
+            "id": "message-1",
+            "role": "user",
+            "content": "Hello",
+            "timestamp": "2026-07-05T10:00:00+00:00",
+            "sequence": 1,
+        },
+        {
+            "id": "message-2",
+            "role": "assistant",
+            "content": "Hi",
+            "timestamp": "2026-07-05T10:00:00+00:00",
+            "sequence": 2,
+        },
     ]
 
     response = client.get(
@@ -35,7 +38,9 @@ def test_history_endpoint(mock_history):
     body = response.json()
 
     assert body["conversation_id"] == "conversation-a"
-    assert len(body["history"]) == 1
+    assert len(body["history"]) == 2
+    assert body["history"][0]["role"] == "user"
+    assert body["history"][1]["role"] == "assistant"
 
 
 @patch(
