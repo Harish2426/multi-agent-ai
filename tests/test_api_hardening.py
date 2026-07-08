@@ -24,17 +24,14 @@ def test_health():
     }
 
 
-@patch("api.routes.memory.collection.count")
-def test_readiness(mock_count):
-    mock_count.return_value = 0
-
+def test_readiness():
     response = client.get("/ready")
 
     assert response.status_code == 200
 
     assert response.json() == {
         "status": "ready",
-        "memory": "available",
+        "database": "available",
     }
 
 
@@ -50,7 +47,7 @@ def test_empty_message_is_rejected():
     assert response.status_code == 422
 
 
-@patch("api.routes.chat_service.chat")
+@patch("api.routes.chat_routes.chat_service.chat")
 def test_quota_error_returns_503(mock_chat):
     mock_chat.side_effect = ModelQuotaError(
         "quota exhausted"
@@ -70,7 +67,7 @@ def test_quota_error_returns_503(mock_chat):
     }
 
 
-@patch("api.routes.chat_service.chat")
+@patch("api.routes.chat_routes.chat_service.chat")
 def test_model_unavailable_returns_503(
     mock_chat,
 ):
@@ -88,7 +85,7 @@ def test_model_unavailable_returns_503(
     assert response.status_code == 503
 
 
-@patch("api.routes.chat_service.chat")
+@patch("api.routes.chat_routes.chat_service.chat")
 def test_unexpected_error_is_safe(mock_chat):
     mock_chat.side_effect = RuntimeError(
         "secret internal database details"

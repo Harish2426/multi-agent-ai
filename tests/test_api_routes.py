@@ -5,11 +5,9 @@ from fastapi.testclient import TestClient
 from api.main import app
 
 
-client = TestClient(app)
-
-
 @patch(
-    "api.routes.memory_service.get_history"
+    "api.routes.conversation_routes."
+    "conversation_service.get_history"
 )
 def test_history_endpoint(mock_history):
     mock_history.return_value = [
@@ -29,9 +27,10 @@ def test_history_endpoint(mock_history):
         },
     ]
 
-    response = client.get(
-        "/conversations/conversation-a/history"
-    )
+    with TestClient(app) as client:
+        response = client.get(
+            "/conversations/conversation-a/history"
+        )
 
     assert response.status_code == 200
 
@@ -42,16 +41,22 @@ def test_history_endpoint(mock_history):
     assert body["history"][0]["role"] == "user"
     assert body["history"][1]["role"] == "assistant"
 
+    mock_history.assert_called_once_with(
+        "conversation-a"
+    )
+
 
 @patch(
-    "api.routes.memory_service.delete_conversation"
+    "api.routes.conversation_routes."
+    "conversation_service.delete_conversation"
 )
 def test_delete_endpoint(mock_delete):
     mock_delete.return_value = 2
 
-    response = client.delete(
-        "/conversations/conversation-a"
-    )
+    with TestClient(app) as client:
+        response = client.delete(
+            "/conversations/conversation-a"
+        )
 
     assert response.status_code == 200
 
@@ -59,3 +64,7 @@ def test_delete_endpoint(mock_delete):
 
     assert body["conversation_id"] == "conversation-a"
     assert body["deleted_count"] == 2
+
+    mock_delete.assert_called_once_with(
+        "conversation-a"
+    )

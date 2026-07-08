@@ -19,14 +19,31 @@ class ReviewerAgent:
         self,
         state: AgentState,
     ) -> AgentState:
+
         prompt = REVIEW_PROMPT.format(
-            question=state["user_input"],
-            code=state["code"],
+            question=state.get(
+                "user_input",
+                "",
+            ),
+            plan=state.get(
+                "plan",
+                "",
+            ),
+            research=state.get(
+                "research",
+                "",
+            ),
+            code=state.get(
+                "code",
+                "",
+            ),
         )
 
         state["review"] = self.get_model().generate(
             prompt
         )
+
+        state["final_answer"] = state["review"]
 
         state["messages"].append(
             "Review completed."
