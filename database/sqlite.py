@@ -21,7 +21,7 @@ DATABASE_URL = "sqlite:///database/app.db"
 engine = create_engine(
     DATABASE_URL,
     connect_args={
-        "check_same_thread": False
+        "check_same_thread": False,
     },
 )
 
@@ -34,7 +34,51 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+# ==========================================================
+# User
+# ==========================================================
+
+class User(Base):
+
+    __tablename__ = "users"
+
+    id = Column(
+        String,
+        primary_key=True,
+        index=True,
+    )
+
+    email = Column(
+        String,
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    password_hash = Column(
+        String,
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    conversations = relationship(
+        "Conversation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+# ==========================================================
+# Conversation
+# ==========================================================
+
 class Conversation(Base):
+
     __tablename__ = "conversations"
 
     id = Column(
@@ -46,6 +90,13 @@ class Conversation(Base):
     title = Column(
         String,
         nullable=False,
+    )
+
+    user_id = Column(
+        String,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
     )
 
     created_at = Column(
@@ -61,6 +112,11 @@ class Conversation(Base):
         nullable=False,
     )
 
+    user = relationship(
+        "User",
+        back_populates="conversations",
+    )
+
     messages = relationship(
         "Message",
         back_populates="conversation",
@@ -68,7 +124,12 @@ class Conversation(Base):
     )
 
 
+# ==========================================================
+# Message
+# ==========================================================
+
 class Message(Base):
+
     __tablename__ = "messages"
 
     id = Column(
