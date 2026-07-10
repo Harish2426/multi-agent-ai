@@ -17,6 +17,7 @@ class ConversationService:
     def create(
         self,
         title: str | None = None,
+        user_id: str | None = None,
     ):
         conversation_id = str(uuid.uuid4())
 
@@ -26,6 +27,7 @@ class ConversationService:
         return self.conversations.create_conversation(
             conversation_id,
             title,
+            user_id=user_id,
         )
 
     def add_user_message(
@@ -55,46 +57,74 @@ class ConversationService:
     def history(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ):
+        if user_id is not None:
+            conversation = (
+                self.conversations.get_conversation(
+                    conversation_id,
+                    user_id=user_id,
+                )
+            )
+
+            if conversation is None:
+                return []
+
         return self.messages.get_messages(
             conversation_id
         )
 
-    # ------------------------------------------------------------------
-    # Compatibility methods for older tests
-    # ------------------------------------------------------------------
-
     def get_history(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ):
         return self.history(
-            conversation_id
+            conversation_id,
+            user_id=user_id,
         )
 
     def list_conversations(
         self,
+        user_id: str | None = None,
     ):
-        return self.conversations.list_conversations()
+        return self.conversations.list_conversations(
+            user_id=user_id
+        )
 
     def delete(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ):
+        if user_id is not None:
+            conversation = (
+                self.conversations.get_conversation(
+                    conversation_id,
+                    user_id=user_id,
+                )
+            )
+
+            if conversation is None:
+                return False
+
         self.messages.delete_messages(
             conversation_id
         )
 
         return self.conversations.delete_conversation(
-            conversation_id
+            conversation_id,
+            user_id=user_id,
         )
 
     def delete_conversation(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ):
         return self.delete(
-            conversation_id
+            conversation_id,
+            user_id=user_id,
         )
 
 

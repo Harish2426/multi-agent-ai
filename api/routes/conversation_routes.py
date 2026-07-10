@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.routes.auth_routes import get_current_user
 from services.conversation_service import conversation_service
 
 
@@ -15,11 +16,6 @@ class RenameConversationRequest(BaseModel):
 
 
 def serialize_message(message):
-    """
-    Serialize both SQLAlchemy Message objects
-    and dictionary messages used by tests.
-    """
-
     if isinstance(message, dict):
         return {
             "id": message.get("id"),
@@ -52,10 +48,13 @@ def serialize_message(message):
 
 
 @router.get("")
-def list_conversations():
-
+def list_conversations(
+    current_user=Depends(get_current_user),
+):
     conversations = (
-        conversation_service.list_conversations()
+        conversation_service.list_conversations(
+            user_id=current_user.id,
+        )
     )
 
     return [
@@ -71,10 +70,11 @@ def list_conversations():
 @router.get("/{conversation_id}/history")
 def get_history_legacy(
     conversation_id: str,
+    current_user=Depends(get_current_user),
 ):
-
     history = conversation_service.get_history(
-        conversation_id
+        conversation_id,
+        user_id=current_user.id,
     )
 
     return {
@@ -89,10 +89,11 @@ def get_history_legacy(
 @router.get("/{conversation_id}")
 def get_history(
     conversation_id: str,
+    current_user=Depends(get_current_user),
 ):
-
     history = conversation_service.get_history(
-        conversation_id
+        conversation_id,
+        user_id=current_user.id,
     )
 
     return {
@@ -108,14 +109,13 @@ def get_history(
 def rename(
     conversation_id: str,
     request: RenameConversationRequest,
+    current_user=Depends(get_current_user),
 ):
-
     conversation = (
-        conversation_service
-        .conversations
-        .update_title(
+        conversation_service.conversations.update_title(
             conversation_id,
             request.title,
+            user_id=current_user.id,
         )
     )
 
@@ -134,11 +134,12 @@ def rename(
 @router.delete("/{conversation_id}")
 def delete(
     conversation_id: str,
+    current_user=Depends(get_current_user),
 ):
-
     deleted = (
         conversation_service.delete_conversation(
-            conversation_id
+            conversation_id,
+            user_id=current_user.id,
         )
     )
 
@@ -150,5 +151,10 @@ def delete(
 
     return {
         "conversation_id": conversation_id,
-        "deleted_count": deleted,
+        "deleted_count": (
+            deleted
+            if isinstance(deleted, int)
+            and not isinstance(deleted, bool)
+            else 1
+        ),
     }

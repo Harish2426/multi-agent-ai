@@ -1,12 +1,18 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+)
 from pydantic import BaseModel, field_validator
 
+from api.routes.auth_routes import get_current_user
 from app.models import (
     ModelError,
     ModelQuotaError,
     ModelUnavailableError,
 )
 from services.chat_service import chat_service
+
 
 router = APIRouter(
     tags=["Chat"],
@@ -20,18 +26,34 @@ class ChatRequest(BaseModel):
     @field_validator("message")
     @classmethod
     def validate_message(cls, value: str):
-        if not value.strip():
-            raise ValueError("Message cannot be empty.")
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Message cannot be empty."
+            )
+
         return value
 
 
 @router.post("/chat")
-def chat(request: ChatRequest):
-
+def chat(
+    request: ChatRequest,
+    current_user=Depends(get_current_user),
+):
     try:
         return chat_service.chat(
             message=request.message,
             conversation_id=request.conversation_id,
+            user_id=current_user.id,
+        )
+
+    except PermissionError:
+        # Do not reveal whether a conversation belongs
+        # to another user or does not exist.
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found.",
         )
 
     except ModelQuotaError:
@@ -75,13 +97,6 @@ def health():
 
 @router.get("/ready")
 def ready():
-    """
-    Readiness endpoint.
-
-    The previous implementation depended on the legacy Chroma
-    memory object. After the SQLite refactor we simply verify
-    that the API is able to serve requests.
-    """
     return {
         "status": "ready",
         "database": "available",

@@ -1,8 +1,32 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.routes.auth_routes import get_current_user
+
+
+client = TestClient(app)
+
+TEST_USER = SimpleNamespace(
+    id="user-123",
+    email="test@example.com",
+)
+
+
+def override_current_user():
+    return TEST_USER
+
+
+def setup_function():
+    app.dependency_overrides[
+        get_current_user
+    ] = override_current_user
+
+
+def teardown_function():
+    app.dependency_overrides.clear()
 
 
 @patch(
@@ -27,10 +51,9 @@ def test_history_endpoint(mock_history):
         },
     ]
 
-    with TestClient(app) as client:
-        response = client.get(
-            "/conversations/conversation-a/history"
-        )
+    response = client.get(
+        "/conversations/conversation-a/history"
+    )
 
     assert response.status_code == 200
 
@@ -42,7 +65,8 @@ def test_history_endpoint(mock_history):
     assert body["history"][1]["role"] == "assistant"
 
     mock_history.assert_called_once_with(
-        "conversation-a"
+        "conversation-a",
+        user_id="user-123",
     )
 
 
@@ -53,18 +77,26 @@ def test_history_endpoint(mock_history):
 def test_delete_endpoint(mock_delete):
     mock_delete.return_value = 2
 
-    with TestClient(app) as client:
-        response = client.delete(
-            "/conversations/conversation-a"
-        )
+    response = client.delete(
+        "/conversations/conversation-a"
+    )
 
     assert response.status_code == 200
 
-    body = response.json()
-
-    assert body["conversation_id"] == "conversation-a"
-    assert body["deleted_count"] == 2
+    assert response.json() == {
+        "conversation_id": "conversation-a",
+        "deleted_count": 2,
+    }
 
     mock_delete.assert_called_once_with(
-        "conversation-a"
+        "conversation-a",
+        user_id="user-123",
     )
+
+
+def test_conversations_require_authentication():
+    app.dependency_overrides.clear()
+
+    response = client.get("/conversations")
+
+    assert response.status_code == 401

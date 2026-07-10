@@ -17,50 +17,71 @@ class ConversationRepository:
         self,
         conversation_id: str,
         title: str,
+        user_id: str | None = None,
     ) -> Conversation:
 
         conversation = Conversation(
             id=conversation_id,
             title=title,
+            user_id=user_id,
         )
 
-        self.session.add(conversation)
-        self.session.commit()
-        self.session.refresh(conversation)
+        try:
+            self.session.add(conversation)
+            self.session.commit()
+            self.session.refresh(conversation)
 
-        return conversation
+            return conversation
+
+        except Exception:
+            self.session.rollback()
+            raise
 
     def get_conversation(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ) -> Conversation | None:
 
-        return (
-            self.session.query(Conversation)
-            .filter(
-                Conversation.id == conversation_id
-            )
-            .first()
+        query = self.session.query(
+            Conversation
+        ).filter(
+            Conversation.id == conversation_id
         )
 
-    def list_conversations(self):
-
-        return (
-            self.session.query(Conversation)
-            .order_by(
-                Conversation.updated_at.desc()
+        if user_id is not None:
+            query = query.filter(
+                Conversation.user_id == user_id
             )
-            .all()
-        )
+
+        return query.first()
+
+    def list_conversations(
+        self,
+        user_id: str | None = None,
+    ):
+
+        query = self.session.query(Conversation)
+
+        if user_id is not None:
+            query = query.filter(
+                Conversation.user_id == user_id
+            )
+
+        return query.order_by(
+            Conversation.updated_at.desc()
+        ).all()
 
     def update_title(
         self,
         conversation_id: str,
         title: str,
+        user_id: str | None = None,
     ) -> Conversation | None:
 
         conversation = self.get_conversation(
-            conversation_id
+            conversation_id,
+            user_id=user_id,
         )
 
         if conversation is None:
@@ -69,27 +90,39 @@ class ConversationRepository:
         conversation.title = title
         conversation.updated_at = datetime.utcnow()
 
-        self.session.commit()
-        self.session.refresh(conversation)
+        try:
+            self.session.commit()
+            self.session.refresh(conversation)
 
-        return conversation
+            return conversation
+
+        except Exception:
+            self.session.rollback()
+            raise
 
     def delete_conversation(
         self,
         conversation_id: str,
+        user_id: str | None = None,
     ) -> bool:
 
         conversation = self.get_conversation(
-            conversation_id
+            conversation_id,
+            user_id=user_id,
         )
 
         if conversation is None:
             return False
 
-        self.session.delete(conversation)
-        self.session.commit()
+        try:
+            self.session.delete(conversation)
+            self.session.commit()
 
-        return True
+            return True
+
+        except Exception:
+            self.session.rollback()
+            raise
 
     def close(self):
         self.session.close()
