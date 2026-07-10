@@ -36,7 +36,10 @@ class ChatService:
             conversation_id or str(uuid4())
         )
 
-        # Authenticated path: enforce ownership and persistence.
+        created_new_conversation = False
+
+        # Authenticated path:
+        # verify ownership or create the conversation.
         if user_id is not None:
 
             if conversation_id is not None:
@@ -61,19 +64,38 @@ class ChatService:
                     user_id=user_id,
                 )
 
-            conversation_service.add_user_message(
-                resolved_conversation_id,
-                message,
-            )
+                created_new_conversation = True
 
         state = self.create_state(
             message=message,
             conversation_id=resolved_conversation_id,
         )
 
-        result = graph.invoke(state)
+        try:
+            result = graph.invoke(state)
 
+        except Exception:
+            # If this request created a new conversation,
+            # remove it so a failed model call does not
+            # leave an empty conversation behind.
+            if (
+                user_id is not None
+                and created_new_conversation
+            ):
+                conversation_service.delete_conversation(
+                    resolved_conversation_id,
+                    user_id=user_id,
+                )
+
+            raise
+
+        # Persist only after successful graph execution.
         if user_id is not None:
+            conversation_service.add_user_message(
+                resolved_conversation_id,
+                message,
+            )
+
             conversation_service.add_assistant_message(
                 conversation_id=resolved_conversation_id,
                 content=result["final_answer"],

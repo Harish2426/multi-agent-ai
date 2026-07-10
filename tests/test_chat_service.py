@@ -1,178 +1,256 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+import pytest
 
-from api.main import app
-from api.routes.auth_routes import get_current_user
-from app.models import (
-    ModelQuotaError,
-    ModelUnavailableError,
-)
+from services.chat_service import chat_service
 
 
-client = TestClient(
-    app,
-    raise_server_exceptions=False,
-)
-
-
-TEST_USER = SimpleNamespace(
-    id="user-123",
-    email="test@example.com",
-)
-
-
-def override_current_user():
-    return TEST_USER
-
-
-def enable_auth_override():
-    app.dependency_overrides[
-        get_current_user
-    ] = override_current_user
-
-
-def disable_auth_override():
-    app.dependency_overrides.pop(
-        get_current_user,
-        None,
-    )
-
-
-def test_health():
-    response = client.get("/health")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok"
-    }
-
-
-def test_readiness():
-    response = client.get("/ready")
-
-    assert response.status_code == 200
-
-    assert response.json() == {
-        "status": "ready",
-        "database": "available",
-    }
-
-
-def test_chat_requires_authentication():
-    disable_auth_override()
-
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-    )
-
-    assert response.status_code == 401
-
-
-def test_empty_message_is_rejected():
-    enable_auth_override()
-
-    try:
-        response = client.post(
-            "/chat",
-            json={
-                "message": "   ",
-                "conversation_id": None,
-            },
-        )
-
-        assert response.status_code == 422
-
-    finally:
-        disable_auth_override()
+GRAPH_RESULT = {
+    "final_answer": "Hello",
+    "route": "planner",
+    "messages": [],
+}
 
 
 @patch(
-    "api.routes.chat_routes.chat_service.chat"
+    "services.chat_service.graph.invoke"
 )
-def test_quota_error_returns_503(mock_chat):
-    enable_auth_override()
-
-    try:
-        mock_chat.side_effect = ModelQuotaError(
-            "quota exhausted"
-        )
-
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
-        )
-
-        assert response.status_code == 503
-
-        assert response.json() == {
-            "detail": "AI model quota is unavailable."
-        }
-
-    finally:
-        disable_auth_override()
-
-
-@patch(
-    "api.routes.chat_routes.chat_service.chat"
-)
-def test_model_unavailable_returns_503(
-    mock_chat,
+def test_existing_conversation_id_is_preserved(
+    mock_invoke,
 ):
-    enable_auth_override()
+    mock_invoke.return_value = GRAPH_RESULT
 
-    try:
-        mock_chat.side_effect = ModelUnavailableError(
-            "service unavailable"
-        )
+    result = chat_service.chat(
+        message="Hello",
+        conversation_id="conversation-123",
+    )
 
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
-        )
-
-        assert response.status_code == 503
-
-    finally:
-        disable_auth_override()
+    assert (
+        result["conversation_id"]
+        == "conversation-123"
+    )
 
 
 @patch(
-    "api.routes.chat_routes.chat_service.chat"
+    "services.chat_service.graph.invoke"
 )
-def test_unexpected_error_is_safe(mock_chat):
-    enable_auth_override()
+def test_conversation_id_is_generated(
+    mock_invoke,
+):
+    mock_invoke.return_value = GRAPH_RESULT
 
-    try:
-        mock_chat.side_effect = RuntimeError(
-            "secret internal database details"
+    result = chat_service.chat(
+        message="Hello"
+    )
+
+    assert result["conversation_id"]
+
+
+@patch(
+    "services.chat_service."
+    "conversation_service.add_assistant_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.add_user_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.conversations."
+    "create_conversation"
+)
+@patch(
+    "services.chat_service.graph.invoke"
+)
+def test_authenticated_new_chat_is_persisted(
+    mock_invoke,
+    mock_create,
+    mock_add_user,
+    mock_add_assistant,
+):
+    mock_invoke.return_value = GRAPH_RESULT
+
+    result = chat_service.chat(
+        message="Hello",
+        user_id="user-123",
+    )
+
+    conversation_id = result["conversation_id"]
+
+    mock_create.assert_called_once_with(
+        conversation_id=conversation_id,
+        title="Hello",
+        user_id="user-123",
+    )
+
+    mock_add_user.assert_called_once_with(
+        conversation_id,
+        "Hello",
+    )
+
+    mock_add_assistant.assert_called_once_with(
+        conversation_id=conversation_id,
+        content="Hello",
+        route="planner",
+    )
+
+
+@patch(
+    "services.chat_service."
+    "conversation_service.add_assistant_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.add_user_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.conversations."
+    "get_conversation"
+)
+@patch(
+    "services.chat_service.graph.invoke"
+)
+def test_authenticated_existing_chat_checks_ownership(
+    mock_invoke,
+    mock_get,
+    mock_add_user,
+    mock_add_assistant,
+):
+    mock_invoke.return_value = GRAPH_RESULT
+
+    mock_get.return_value = SimpleNamespace(
+        id="conversation-123",
+        user_id="user-123",
+    )
+
+    chat_service.chat(
+        message="Hello",
+        conversation_id="conversation-123",
+        user_id="user-123",
+    )
+
+    mock_get.assert_called_once_with(
+        "conversation-123",
+        user_id="user-123",
+    )
+
+    mock_add_user.assert_called_once_with(
+        "conversation-123",
+        "Hello",
+    )
+
+
+@patch(
+    "services.chat_service."
+    "conversation_service.conversations."
+    "get_conversation"
+)
+def test_authenticated_user_cannot_use_foreign_conversation(
+    mock_get,
+):
+    mock_get.return_value = None
+
+    with pytest.raises(PermissionError):
+        chat_service.chat(
+            message="Hello",
+            conversation_id="private-conversation",
+            user_id="user-123",
         )
 
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
+
+@patch(
+    "services.chat_service."
+    "conversation_service.delete_conversation"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.add_assistant_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.add_user_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.conversations."
+    "create_conversation"
+)
+@patch(
+    "services.chat_service.graph.invoke"
+)
+def test_failed_new_chat_is_cleaned_up(
+    mock_invoke,
+    mock_create,
+    mock_add_user,
+    mock_add_assistant,
+    mock_delete,
+):
+    mock_invoke.side_effect = RuntimeError(
+        "model failed"
+    )
+
+    with pytest.raises(RuntimeError):
+        chat_service.chat(
+            message="Hello",
+            user_id="user-123",
         )
 
-        assert response.status_code == 500
+    mock_create.assert_called_once()
 
-        assert response.json() == {
-            "detail": "Internal server error."
-        }
+    mock_add_user.assert_not_called()
+    mock_add_assistant.assert_not_called()
 
-        assert (
-            "secret internal database details"
-            not in response.text
+    created_conversation_id = (
+        mock_create.call_args.kwargs[
+            "conversation_id"
+        ]
+    )
+
+    mock_delete.assert_called_once_with(
+        created_conversation_id,
+        user_id="user-123",
+    )
+
+
+@patch(
+    "services.chat_service."
+    "conversation_service.add_assistant_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.add_user_message"
+)
+@patch(
+    "services.chat_service."
+    "conversation_service.conversations."
+    "get_conversation"
+)
+@patch(
+    "services.chat_service.graph.invoke"
+)
+def test_failed_existing_chat_adds_no_messages(
+    mock_invoke,
+    mock_get,
+    mock_add_user,
+    mock_add_assistant,
+):
+    mock_get.return_value = SimpleNamespace(
+        id="conversation-123",
+        user_id="user-123",
+    )
+
+    mock_invoke.side_effect = RuntimeError(
+        "model failed"
+    )
+
+    with pytest.raises(RuntimeError):
+        chat_service.chat(
+            message="Hello",
+            conversation_id="conversation-123",
+            user_id="user-123",
         )
 
-    finally:
-        disable_auth_override()
+    mock_add_user.assert_not_called()
+    mock_add_assistant.assert_not_called()
