@@ -126,6 +126,19 @@ class ConversationService:
             conversation_id,
             user_id=user_id,
         )
+    def add_message_pair(
+        self,
+        conversation_id: str,
+        user_content: str,
+        assistant_content: str,
+        route: str | None = None,
+    ):
+        return self.messages.add_message_pair(
+            conversation_id=conversation_id,
+            user_content=user_content,
+            assistant_content=assistant_content,
+            route=route,
+        )
 
 
 conversation_service = ConversationService()

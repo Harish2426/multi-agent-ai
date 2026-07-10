@@ -38,8 +38,6 @@ class ChatService:
 
         created_new_conversation = False
 
-        # Authenticated path:
-        # verify ownership or create the conversation.
         if user_id is not None:
 
             if conversation_id is not None:
@@ -75,9 +73,6 @@ class ChatService:
             result = graph.invoke(state)
 
         except Exception:
-            # If this request created a new conversation,
-            # remove it so a failed model call does not
-            # leave an empty conversation behind.
             if (
                 user_id is not None
                 and created_new_conversation
@@ -89,18 +84,25 @@ class ChatService:
 
             raise
 
-        # Persist only after successful graph execution.
         if user_id is not None:
-            conversation_service.add_user_message(
-                resolved_conversation_id,
-                message,
-            )
+            try:
+                conversation_service.add_message_pair(
+                    conversation_id=resolved_conversation_id,
+                    user_content=message,
+                    assistant_content=result["final_answer"],
+                    route=result["route"],
+                )
 
-            conversation_service.add_assistant_message(
-                conversation_id=resolved_conversation_id,
-                content=result["final_answer"],
-                route=result["route"],
-            )
+            except Exception:
+                # A newly-created conversation should not remain
+                # empty if atomic message persistence fails.
+                if created_new_conversation:
+                    conversation_service.delete_conversation(
+                        resolved_conversation_id,
+                        user_id=user_id,
+                    )
+
+                raise
 
         return {
             "response": result["final_answer"],
