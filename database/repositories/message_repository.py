@@ -8,8 +8,12 @@ from database.sqlite import (
 
 class MessageRepository:
 
-    def __init__(self):
-        self.session: Session = SessionLocal()
+    def __init__(
+        self,
+        session: Session | None = None,
+    ):
+        self.session = session or SessionLocal()
+        self._owns_session = session is None
 
     def add_message(
         self,
@@ -26,21 +30,73 @@ class MessageRepository:
             route=route,
         )
 
-        self.session.add(message)
-        self.session.commit()
-        self.session.refresh(message)
+        try:
+            self.session.add(message)
+            self.session.commit()
+            self.session.refresh(message)
 
-        return message
+            return message
+
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def add_message_pair(
+        self,
+        conversation_id: str,
+        user_content: str,
+        assistant_content: str,
+        route: str | None = None,
+    ) -> tuple[Message, Message]:
+
+        user_message = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_content,
+        )
+
+        assistant_message = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=assistant_content,
+            route=route,
+        )
+
+        try:
+            self.session.add_all(
+                [
+                    user_message,
+                    assistant_message,
+                ]
+            )
+
+            self.session.flush()
+            self.session.commit()
+
+            self.session.refresh(user_message)
+            self.session.refresh(
+                assistant_message
+            )
+
+            return (
+                user_message,
+                assistant_message,
+            )
+
+        except Exception:
+            self.session.rollback()
+            raise
 
     def get_messages(
         self,
         conversation_id: str,
-    ):
+    ) -> list[Message]:
 
         return (
             self.session.query(Message)
             .filter(
-                Message.conversation_id == conversation_id
+                Message.conversation_id
+                == conversation_id
             )
             .order_by(Message.id.asc())
             .all()
@@ -51,20 +107,27 @@ class MessageRepository:
         conversation_id: str,
     ) -> int:
 
-        deleted = (
-            self.session.query(Message)
-            .filter(
-                Message.conversation_id == conversation_id
+        try:
+            deleted = (
+                self.session.query(Message)
+                .filter(
+                    Message.conversation_id
+                    == conversation_id
+                )
+                .delete()
             )
-            .delete()
-        )
 
-        self.session.commit()
+            self.session.commit()
 
-        return deleted
+            return deleted
+
+        except Exception:
+            self.session.rollback()
+            raise
 
     def close(self):
-        self.session.close()
+        if self._owns_session:
+            self.session.close()
 
 
 message_repository = MessageRepository()

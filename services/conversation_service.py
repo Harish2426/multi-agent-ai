@@ -1,5 +1,7 @@
 import uuid
 
+from sqlalchemy.orm import Session
+
 from database.repositories.conversation_repository import (
     ConversationRepository,
 )
@@ -10,9 +12,19 @@ from database.repositories.message_repository import (
 
 class ConversationService:
 
-    def __init__(self):
-        self.conversations = ConversationRepository()
-        self.messages = MessageRepository()
+    def __init__(
+        self,
+        session: Session | None = None,
+    ):
+        self.conversations = ConversationRepository(
+            session=session
+        )
+
+        self.messages = MessageRepository(
+            session=session
+        )
+
+        self._owns_repositories = session is None
 
     def create(
         self,
@@ -52,6 +64,20 @@ class ConversationService:
             "assistant",
             content,
             route,
+        )
+
+    def add_message_pair(
+        self,
+        conversation_id: str,
+        user_content: str,
+        assistant_content: str,
+        route: str | None = None,
+    ):
+        return self.messages.add_message_pair(
+            conversation_id=conversation_id,
+            user_content=user_content,
+            assistant_content=assistant_content,
+            route=route,
         )
 
     def history(
@@ -126,19 +152,10 @@ class ConversationService:
             conversation_id,
             user_id=user_id,
         )
-    def add_message_pair(
-        self,
-        conversation_id: str,
-        user_content: str,
-        assistant_content: str,
-        route: str | None = None,
-    ):
-        return self.messages.add_message_pair(
-            conversation_id=conversation_id,
-            user_content=user_content,
-            assistant_content=assistant_content,
-            route=route,
-        )
+
+    def close(self):
+        self.messages.close()
+        self.conversations.close()
 
 
 conversation_service = ConversationService()

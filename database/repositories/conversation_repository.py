@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,12 @@ from database.sqlite import (
 
 class ConversationRepository:
 
-    def __init__(self):
-        self.session: Session = SessionLocal()
+    def __init__(
+        self,
+        session: Session | None = None,
+    ):
+        self.session = session or SessionLocal()
+        self._owns_session = session is None
 
     def create_conversation(
         self,
@@ -59,7 +63,7 @@ class ConversationRepository:
     def list_conversations(
         self,
         user_id: str | None = None,
-    ):
+    ) -> list[Conversation]:
 
         query = self.session.query(Conversation)
 
@@ -88,7 +92,12 @@ class ConversationRepository:
             return None
 
         conversation.title = title
-        conversation.updated_at = datetime.utcnow()
+
+        # Keep naive UTC for compatibility with the current
+        # SQLite DateTime columns.
+        conversation.updated_at = (
+            datetime.now(UTC).replace(tzinfo=None)
+        )
 
         try:
             self.session.commit()
@@ -125,7 +134,8 @@ class ConversationRepository:
             raise
 
     def close(self):
-        self.session.close()
+        if self._owns_session:
+            self.session.close()
 
 
 conversation_repository = ConversationRepository()
