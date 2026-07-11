@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.middleware.request_logging import (
+    RequestLoggingMiddleware,
+)
 from api.routes.auth_routes import (
     router as auth_router,
 )
@@ -16,9 +19,13 @@ from api.routes.system_routes import (
     router as system_router,
 )
 from app.config import settings
+from app.logging_config import configure_logging
 from database.health import (
     check_database_readiness,
 )
+
+
+configure_logging()
 
 
 @asynccontextmanager
@@ -38,6 +45,11 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     lifespan=lifespan,
+)
+
+
+app.add_middleware(
+    RequestLoggingMiddleware
 )
 
 
