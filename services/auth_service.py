@@ -1,19 +1,18 @@
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from database.repositories.user_repository import (
+    UserRepository,
     user_repository,
 )
 
-# ------------------------------------------------------------------
-# Configuration
-# ------------------------------------------------------------------
 
 SECRET_KEY = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_KEY"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
@@ -22,6 +21,17 @@ pwd_context = CryptContext(
 
 
 class AuthService:
+
+    def __init__(
+        self,
+        user_repository_instance: (
+            UserRepository | None
+        ) = None,
+    ):
+        self.users = (
+            user_repository_instance
+            or user_repository
+        )
 
     def hash_password(
         self,
@@ -44,10 +54,11 @@ class AuthService:
         user_id: str,
     ) -> str:
 
-        expire = datetime.now(
-            UTC
-        ) + timedelta(
-            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        expire = (
+            datetime.now(UTC)
+            + timedelta(
+                minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+            )
         )
 
         payload = {
@@ -82,9 +93,7 @@ class AuthService:
         password: str,
     ):
 
-        user = user_repository.get_by_email(
-            email
-        )
+        user = self.users.get_by_email(email)
 
         if user is None:
             return None
@@ -102,16 +111,17 @@ class AuthService:
         token: str,
     ):
 
-        payload = self.decode_access_token(
-            token
-        )
+        payload = self.decode_access_token(token)
 
         if payload is None:
             return None
 
-        return user_repository.get_by_id(
-            payload["sub"]
-        )
+        user_id = payload.get("sub")
+
+        if not user_id:
+            return None
+
+        return self.users.get_by_id(user_id)
 
 
 auth_service = AuthService()

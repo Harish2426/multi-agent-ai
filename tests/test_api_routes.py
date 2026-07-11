@@ -1,9 +1,12 @@
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from api.dependencies import get_conversation_service
+from api.dependencies import (
+    get_auth_service,
+    get_conversation_service,
+)
 from api.main import app
 
 
@@ -25,20 +28,34 @@ def auth_headers():
     }
 
 
-def override_auth():
-    patcher = patch(
-        "api.routes.auth_routes."
-        "auth_service.get_current_user"
+def enable_auth_override():
+    mock_auth_service = Mock()
+
+    mock_auth_service.get_current_user.return_value = (
+        TEST_USER
     )
 
-    mock_get_user = patcher.start()
-    mock_get_user.return_value = TEST_USER
+    app.dependency_overrides[
+        get_auth_service
+    ] = lambda: mock_auth_service
 
-    return patcher
+    return mock_auth_service
+
+
+def clear_overrides():
+    app.dependency_overrides.pop(
+        get_auth_service,
+        None,
+    )
+
+    app.dependency_overrides.pop(
+        get_conversation_service,
+        None,
+    )
 
 
 def test_history_endpoint():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
 
@@ -84,7 +101,12 @@ def test_history_endpoint():
         )
 
         assert len(body["history"]) == 2
-        assert body["history"][0]["role"] == "user"
+
+        assert (
+            body["history"][0]["role"]
+            == "user"
+        )
+
         assert (
             body["history"][1]["role"]
             == "assistant"
@@ -96,17 +118,14 @@ def test_history_endpoint():
         )
 
     finally:
-        app.dependency_overrides.pop(
-            get_conversation_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()
 
 
 def test_delete_endpoint():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
+
     mock_service.delete_conversation.return_value = 2
 
     app.dependency_overrides[
@@ -127,6 +146,7 @@ def test_delete_endpoint():
             body["conversation_id"]
             == "conversation-a"
         )
+
         assert body["deleted_count"] == 2
 
         (
@@ -139,8 +159,4 @@ def test_delete_endpoint():
         )
 
     finally:
-        app.dependency_overrides.pop(
-            get_conversation_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()

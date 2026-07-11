@@ -9,21 +9,26 @@ from fastapi.security import (
     HTTPBearer,
 )
 
+from api.dependencies import (
+    get_auth_service,
+    get_user_repository,
+)
 from api.schemas.auth import (
     LoginRequest,
     RegisterRequest,
     TokenResponse,
 )
 from database.repositories.user_repository import (
-    user_repository,
+    UserRepository,
 )
-from services.auth_service import auth_service
+from services.auth_service import AuthService
 
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
+
 
 bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -33,6 +38,9 @@ bearer_scheme = HTTPBearer(
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(
         bearer_scheme
+    ),
+    service: AuthService = Depends(
+        get_auth_service
     ),
 ):
     if credentials is None:
@@ -44,7 +52,7 @@ def get_current_user(
             },
         )
 
-    user = auth_service.get_current_user(
+    user = service.get_current_user(
         credentials.credentials
     )
 
@@ -65,13 +73,18 @@ def get_current_user(
     response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register(request: RegisterRequest):
-
+def register(
+    request: RegisterRequest,
+    users: UserRepository = Depends(
+        get_user_repository
+    ),
+    service: AuthService = Depends(
+        get_auth_service
+    ),
+):
     email = request.email.lower()
 
-    existing = user_repository.get_by_email(
-        email
-    )
+    existing = users.get_by_email(email)
 
     if existing is not None:
         raise HTTPException(
@@ -79,16 +92,16 @@ def register(request: RegisterRequest):
             detail="Email already exists.",
         )
 
-    password_hash = auth_service.hash_password(
+    password_hash = service.hash_password(
         request.password
     )
 
-    user = user_repository.create_user(
+    user = users.create_user(
         email=email,
         password_hash=password_hash,
     )
 
-    token = auth_service.create_access_token(
+    token = service.create_access_token(
         user.id
     )
 
@@ -106,9 +119,13 @@ def register(request: RegisterRequest):
     "/login",
     response_model=TokenResponse,
 )
-def login(request: LoginRequest):
-
-    user = auth_service.authenticate(
+def login(
+    request: LoginRequest,
+    service: AuthService = Depends(
+        get_auth_service
+    ),
+):
+    user = service.authenticate(
         request.email.lower(),
         request.password,
     )
@@ -122,7 +139,7 @@ def login(request: LoginRequest):
             },
         )
 
-    token = auth_service.create_access_token(
+    token = service.create_access_token(
         user.id
     )
 

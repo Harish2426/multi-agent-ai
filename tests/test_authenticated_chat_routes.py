@@ -1,9 +1,12 @@
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from api.dependencies import get_chat_service
+from api.dependencies import (
+    get_auth_service,
+    get_chat_service,
+)
 from api.main import app
 
 
@@ -25,16 +28,30 @@ def auth_headers():
     }
 
 
-def override_auth():
-    patcher = patch(
-        "api.routes.auth_routes."
-        "auth_service.get_current_user"
+def enable_auth_override():
+    mock_auth_service = Mock()
+
+    mock_auth_service.get_current_user.return_value = (
+        TEST_USER
     )
 
-    mock_get_user = patcher.start()
-    mock_get_user.return_value = TEST_USER
+    app.dependency_overrides[
+        get_auth_service
+    ] = lambda: mock_auth_service
 
-    return patcher
+    return mock_auth_service
+
+
+def clear_overrides():
+    app.dependency_overrides.pop(
+        get_auth_service,
+        None,
+    )
+
+    app.dependency_overrides.pop(
+        get_chat_service,
+        None,
+    )
 
 
 def successful_chat_result(
@@ -49,6 +66,8 @@ def successful_chat_result(
 
 
 def test_chat_requires_authentication():
+    clear_overrides()
+
     response = client.post(
         "/chat",
         json={
@@ -60,9 +79,10 @@ def test_chat_requires_authentication():
 
 
 def test_authenticated_user_can_create_chat():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
+
     mock_service.chat.return_value = (
         successful_chat_result(
             "conversation-new"
@@ -88,7 +108,9 @@ def test_authenticated_user_can_create_chat():
             "response": "Hello from AI",
             "route": "planner",
             "messages": [],
-            "conversation_id": "conversation-new",
+            "conversation_id": (
+                "conversation-new"
+            ),
         }
 
         mock_service.chat.assert_called_once_with(
@@ -98,17 +120,14 @@ def test_authenticated_user_can_create_chat():
         )
 
     finally:
-        app.dependency_overrides.pop(
-            get_chat_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()
 
 
 def test_authenticated_user_can_continue_chat():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
+
     mock_service.chat.return_value = (
         successful_chat_result(
             "conversation-123"
@@ -140,17 +159,14 @@ def test_authenticated_user_can_continue_chat():
         )
 
     finally:
-        app.dependency_overrides.pop(
-            get_chat_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()
 
 
 def test_user_cannot_use_inaccessible_conversation():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
+
     mock_service.chat.side_effect = PermissionError(
         "Conversation not found."
     )
@@ -178,17 +194,14 @@ def test_user_cannot_use_inaccessible_conversation():
         }
 
     finally:
-        app.dependency_overrides.pop(
-            get_chat_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()
 
 
 def test_chat_passes_normalized_message():
-    auth_patcher = override_auth()
+    enable_auth_override()
 
     mock_service = Mock()
+
     mock_service.chat.return_value = (
         successful_chat_result(
             "conversation-new"
@@ -217,8 +230,4 @@ def test_chat_passes_normalized_message():
         )
 
     finally:
-        app.dependency_overrides.pop(
-            get_chat_service,
-            None,
-        )
-        auth_patcher.stop()
+        clear_overrides()
