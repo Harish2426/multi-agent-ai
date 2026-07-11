@@ -180,6 +180,3 @@ class Message(Base):
 
 def init_database():
     Base.metadata.create_all(bind=engine)
-
-
-init_database()

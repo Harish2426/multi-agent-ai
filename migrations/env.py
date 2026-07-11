@@ -3,13 +3,20 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.config import settings
 from database.sqlite import Base
-
-# Import models so SQLAlchemy metadata knows about them.
-from database.sqlite import Conversation, Message, User  # noqa: F401
 
 
 config = context.config
+
+# Always use the application DATABASE_URL.
+# This keeps Alembic and the application pointed at
+# the same database.
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.database_url,
+)
+
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -38,11 +45,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    configuration = config.get_section(
+        config.config_ini_section,
+        {},
+    )
+
     connectable = engine_from_config(
-        config.get_section(
-            config.config_ini_section,
-            {},
-        ),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -52,7 +61,6 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            render_as_batch=True,
         )
 
         with context.begin_transaction():
