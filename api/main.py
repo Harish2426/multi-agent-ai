@@ -1,29 +1,33 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes.chat_routes import router as chat_router
+from api.routes.auth_routes import (
+    router as auth_router,
+)
+from api.routes.chat_routes import (
+    router as chat_router,
+)
 from api.routes.conversation_routes import (
     router as conversation_router,
 )
+from app.config import settings
+
 
 app = FastAPI(
-    title="Multi-Agent AI API",
-    version="1.0.0",
+    title=settings.app_name,
+    version=settings.app_version,
 )
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from api.routes.auth_routes import (
-    router as auth_router,
-)
+
+
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(conversation_router)

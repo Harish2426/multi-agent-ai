@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Column,
@@ -9,21 +9,38 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
-
 from sqlalchemy.orm import (
     declarative_base,
     relationship,
     sessionmaker,
 )
 
-DATABASE_URL = "sqlite:///database/app.db"
+from app.config import settings
+
+
+def utc_now():
+    # Current schema stores naive UTC DateTime values.
+    return datetime.now(UTC).replace(
+        tzinfo=None
+    )
+
+
+DATABASE_URL = settings.database_url
+
+
+engine_options = {}
+
+if DATABASE_URL.startswith("sqlite"):
+    engine_options["connect_args"] = {
+        "check_same_thread": False,
+    }
+
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={
-        "check_same_thread": False,
-    },
+    **engine_options,
 )
+
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -31,12 +48,9 @@ SessionLocal = sessionmaker(
     bind=engine,
 )
 
+
 Base = declarative_base()
 
-
-# ==========================================================
-# User
-# ==========================================================
 
 class User(Base):
 
@@ -62,7 +76,7 @@ class User(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        default=utc_now,
         nullable=False,
     )
 
@@ -72,10 +86,6 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-
-# ==========================================================
-# Conversation
-# ==========================================================
 
 class Conversation(Base):
 
@@ -101,14 +111,14 @@ class Conversation(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        default=utc_now,
         nullable=False,
     )
 
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False,
     )
 
@@ -123,10 +133,6 @@ class Conversation(Base):
         cascade="all, delete-orphan",
     )
 
-
-# ==========================================================
-# Message
-# ==========================================================
 
 class Message(Base):
 
@@ -162,7 +168,7 @@ class Message(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        default=utc_now,
         nullable=False,
     )
 

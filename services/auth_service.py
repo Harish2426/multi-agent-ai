@@ -1,17 +1,17 @@
-from datetime import UTC, datetime, timedelta
+from datetime import (
+    UTC,
+    datetime,
+    timedelta,
+)
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from app.config import Settings, settings
 from database.repositories.user_repository import (
     UserRepository,
     user_repository,
 )
-
-
-SECRET_KEY = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_KEY"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 pwd_context = CryptContext(
@@ -27,10 +27,16 @@ class AuthService:
         user_repository_instance: (
             UserRepository | None
         ) = None,
+        settings_instance: Settings | None = None,
     ):
         self.users = (
             user_repository_instance
             or user_repository
+        )
+
+        self.settings = (
+            settings_instance
+            or settings
         )
 
     def hash_password(
@@ -57,7 +63,10 @@ class AuthService:
         expire = (
             datetime.now(UTC)
             + timedelta(
-                minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+                minutes=(
+                    self.settings
+                    .access_token_expire_minutes
+                )
             )
         )
 
@@ -68,8 +77,10 @@ class AuthService:
 
         return jwt.encode(
             payload,
-            SECRET_KEY,
-            algorithm=ALGORITHM,
+            self.settings.secret_key,
+            algorithm=(
+                self.settings.jwt_algorithm
+            ),
         )
 
     def decode_access_token(
@@ -80,8 +91,10 @@ class AuthService:
         try:
             return jwt.decode(
                 token,
-                SECRET_KEY,
-                algorithms=[ALGORITHM],
+                self.settings.secret_key,
+                algorithms=[
+                    self.settings.jwt_algorithm
+                ],
             )
 
         except JWTError:
