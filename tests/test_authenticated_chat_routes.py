@@ -1,8 +1,9 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
+from api.dependencies import get_chat_service
 from api.main import app
 
 
@@ -22,6 +23,18 @@ def auth_headers():
     return {
         "Authorization": "Bearer test-token",
     }
+
+
+def override_auth():
+    patcher = patch(
+        "api.routes.auth_routes."
+        "auth_service.get_current_user"
+    )
+
+    mock_get_user = patcher.start()
+    mock_get_user.return_value = TEST_USER
+
+    return patcher
 
 
 def successful_chat_result(
@@ -46,148 +59,166 @@ def test_chat_requires_authentication():
     assert response.status_code == 401
 
 
-@patch(
-    "api.routes.chat_routes."
-    "chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_authenticated_user_can_create_chat(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
+def test_authenticated_user_can_create_chat():
+    auth_patcher = override_auth()
 
-    mock_chat.return_value = successful_chat_result(
-        "conversation-new"
+    mock_service = Mock()
+    mock_service.chat.return_value = (
+        successful_chat_result(
+            "conversation-new"
+        )
     )
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-        headers=auth_headers(),
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
+
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+            },
+            headers=auth_headers(),
+        )
+
+        assert response.status_code == 200
+
+        assert response.json() == {
+            "response": "Hello from AI",
+            "route": "planner",
+            "messages": [],
+            "conversation_id": "conversation-new",
+        }
+
+        mock_service.chat.assert_called_once_with(
+            message="Hello",
+            conversation_id=None,
+            user_id="user-123",
+        )
+
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()
+
+
+def test_authenticated_user_can_continue_chat():
+    auth_patcher = override_auth()
+
+    mock_service = Mock()
+    mock_service.chat.return_value = (
+        successful_chat_result(
+            "conversation-123"
+        )
     )
 
-    assert response.status_code == 200
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
 
-    assert response.json() == {
-        "response": "Hello from AI",
-        "route": "planner",
-        "messages": [],
-        "conversation_id": "conversation-new",
-    }
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Continue",
+                "conversation_id": (
+                    "conversation-123"
+                ),
+            },
+            headers=auth_headers(),
+        )
 
-    mock_chat.assert_called_once_with(
-        message="Hello",
-        conversation_id=None,
-        user_id="user-123",
-    )
+        assert response.status_code == 200
 
+        mock_service.chat.assert_called_once_with(
+            message="Continue",
+            conversation_id="conversation-123",
+            user_id="user-123",
+        )
 
-@patch(
-    "api.routes.chat_routes."
-    "chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_authenticated_user_can_continue_chat(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
-
-    mock_chat.return_value = successful_chat_result(
-        "conversation-123"
-    )
-
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Continue",
-            "conversation_id": "conversation-123",
-        },
-        headers=auth_headers(),
-    )
-
-    assert response.status_code == 200
-
-    mock_chat.assert_called_once_with(
-        message="Continue",
-        conversation_id="conversation-123",
-        user_id="user-123",
-    )
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()
 
 
-@patch(
-    "api.routes.chat_routes."
-    "chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_user_cannot_use_inaccessible_conversation(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
+def test_user_cannot_use_inaccessible_conversation():
+    auth_patcher = override_auth()
 
-    mock_chat.side_effect = PermissionError(
+    mock_service = Mock()
+    mock_service.chat.side_effect = PermissionError(
         "Conversation not found."
     )
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-            "conversation_id": "foreign-conversation",
-        },
-        headers=auth_headers(),
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
+
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+                "conversation_id": (
+                    "foreign-conversation"
+                ),
+            },
+            headers=auth_headers(),
+        )
+
+        assert response.status_code == 404
+
+        assert response.json() == {
+            "detail": "Conversation not found."
+        }
+
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()
+
+
+def test_chat_passes_normalized_message():
+    auth_patcher = override_auth()
+
+    mock_service = Mock()
+    mock_service.chat.return_value = (
+        successful_chat_result(
+            "conversation-new"
+        )
     )
 
-    assert response.status_code == 404
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
 
-    assert response.json() == {
-        "detail": "Conversation not found."
-    }
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "   Hello   ",
+            },
+            headers=auth_headers(),
+        )
 
+        assert response.status_code == 200
 
-@patch(
-    "api.routes.chat_routes."
-    "chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_chat_passes_normalized_message(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
+        mock_service.chat.assert_called_once_with(
+            message="Hello",
+            conversation_id=None,
+            user_id="user-123",
+        )
 
-    mock_chat.return_value = successful_chat_result(
-        "conversation-new"
-    )
-
-    response = client.post(
-        "/chat",
-        json={
-            "message": "   Hello   ",
-        },
-        headers=auth_headers(),
-    )
-
-    assert response.status_code == 200
-
-    mock_chat.assert_called_once_with(
-        message="Hello",
-        conversation_id=None,
-        user_id="user-123",
-    )
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()

@@ -1,8 +1,9 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
+from api.dependencies import get_chat_service
 from api.main import app
 from app.models import (
     ModelQuotaError,
@@ -20,6 +21,24 @@ TEST_USER = SimpleNamespace(
     id="user-123",
     email="test@example.com",
 )
+
+
+def auth_headers():
+    return {
+        "Authorization": "Bearer test-token",
+    }
+
+
+def override_auth():
+    patcher = patch(
+        "api.routes.auth_routes."
+        "auth_service.get_current_user"
+    )
+
+    mock_get_user = patcher.start()
+    mock_get_user.return_value = TEST_USER
+
+    return patcher
 
 
 def test_health():
@@ -52,127 +71,125 @@ def test_chat_requires_authentication():
     assert response.status_code == 401
 
 
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_empty_message_is_rejected(
-    mock_get_current_user,
-):
-    mock_get_current_user.return_value = TEST_USER
+def test_empty_message_is_rejected():
+    auth_patcher = override_auth()
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "   ",
-            "conversation_id": None,
-        },
-        headers={
-            "Authorization": "Bearer test-token",
-        },
-    )
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "   ",
+            },
+            headers=auth_headers(),
+        )
 
-    assert response.status_code == 422
+        assert response.status_code == 422
+
+    finally:
+        auth_patcher.stop()
 
 
-@patch(
-    "api.routes.chat_routes.chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_quota_error_returns_503(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
+def test_quota_error_returns_503():
+    auth_patcher = override_auth()
 
-    mock_chat.side_effect = ModelQuotaError(
+    mock_service = Mock()
+    mock_service.chat.side_effect = ModelQuotaError(
         "quota exhausted"
     )
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-        headers={
-            "Authorization": "Bearer test-token",
-        },
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
+
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+            },
+            headers=auth_headers(),
+        )
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "detail": "AI model quota is unavailable."
+        }
+
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()
+
+
+def test_model_unavailable_returns_503():
+    auth_patcher = override_auth()
+
+    mock_service = Mock()
+    mock_service.chat.side_effect = (
+        ModelUnavailableError(
+            "service unavailable"
+        )
     )
 
-    assert response.status_code == 503
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
 
-    assert response.json() == {
-        "detail": "AI model quota is unavailable."
-    }
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+            },
+            headers=auth_headers(),
+        )
 
+        assert response.status_code == 503
 
-@patch(
-    "api.routes.chat_routes.chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_model_unavailable_returns_503(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
-
-    mock_chat.side_effect = ModelUnavailableError(
-        "service unavailable"
-    )
-
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-        headers={
-            "Authorization": "Bearer test-token",
-        },
-    )
-
-    assert response.status_code == 503
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()
 
 
-@patch(
-    "api.routes.chat_routes.chat_service.chat"
-)
-@patch(
-    "api.routes.auth_routes."
-    "auth_service.get_current_user"
-)
-def test_unexpected_error_is_safe(
-    mock_get_current_user,
-    mock_chat,
-):
-    mock_get_current_user.return_value = TEST_USER
+def test_unexpected_error_is_safe():
+    auth_patcher = override_auth()
 
-    mock_chat.side_effect = RuntimeError(
+    mock_service = Mock()
+    mock_service.chat.side_effect = RuntimeError(
         "secret internal database details"
     )
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-        headers={
-            "Authorization": "Bearer test-token",
-        },
-    )
+    app.dependency_overrides[
+        get_chat_service
+    ] = lambda: mock_service
 
-    assert response.status_code == 500
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+            },
+            headers=auth_headers(),
+        )
 
-    assert response.json() == {
-        "detail": "Internal server error."
-    }
+        assert response.status_code == 500
+        assert response.json() == {
+            "detail": "Internal server error."
+        }
 
-    assert (
-        "secret internal database details"
-        not in response.text
-    )
+        assert (
+            "secret internal database details"
+            not in response.text
+        )
+
+    finally:
+        app.dependency_overrides.pop(
+            get_chat_service,
+            None,
+        )
+        auth_patcher.stop()

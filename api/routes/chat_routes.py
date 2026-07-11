@@ -5,13 +5,14 @@ from fastapi import (
 )
 from pydantic import BaseModel, field_validator
 
+from api.dependencies import get_chat_service
 from api.routes.auth_routes import get_current_user
 from app.models import (
     ModelError,
     ModelQuotaError,
     ModelUnavailableError,
 )
-from services.chat_service import chat_service
+from services.chat_service import ChatService
 
 
 router = APIRouter(
@@ -40,17 +41,18 @@ class ChatRequest(BaseModel):
 def chat(
     request: ChatRequest,
     current_user=Depends(get_current_user),
+    request_chat_service: ChatService = Depends(
+        get_chat_service
+    ),
 ):
     try:
-        return chat_service.chat(
+        return request_chat_service.chat(
             message=request.message,
             conversation_id=request.conversation_id,
             user_id=current_user.id,
         )
 
     except PermissionError:
-        # Do not reveal whether a conversation belongs
-        # to another user or does not exist.
         raise HTTPException(
             status_code=404,
             detail="Conversation not found.",
