@@ -14,12 +14,6 @@ from app.models import (
 )
 
 
-client = TestClient(
-    app,
-    raise_server_exceptions=False,
-)
-
-
 TEST_USER = SimpleNamespace(
     id="user-123",
     email="test@example.com",
@@ -43,25 +37,19 @@ def enable_auth_override():
         get_auth_service
     ] = lambda: mock_auth_service
 
-    return mock_auth_service
-
 
 def clear_overrides():
-    app.dependency_overrides.pop(
-        get_auth_service,
-        None,
-    )
-
-    app.dependency_overrides.pop(
-        get_chat_service,
-        None,
-    )
+    app.dependency_overrides.clear()
 
 
 def test_health():
     clear_overrides()
 
-    response = client.get("/health")
+    with TestClient(
+        app,
+        raise_server_exceptions=False,
+    ) as client:
+        response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -72,7 +60,11 @@ def test_health():
 def test_readiness():
     clear_overrides()
 
-    response = client.get("/ready")
+    with TestClient(
+        app,
+        raise_server_exceptions=False,
+    ) as client:
+        response = client.get("/ready")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -84,27 +76,36 @@ def test_readiness():
 def test_chat_requires_authentication():
     clear_overrides()
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Hello",
-        },
-    )
+    with TestClient(
+        app,
+        raise_server_exceptions=False,
+    ) as client:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "Hello",
+            },
+        )
 
     assert response.status_code == 401
 
 
 def test_empty_message_is_rejected():
+    clear_overrides()
     enable_auth_override()
 
     try:
-        response = client.post(
-            "/chat",
-            json={
-                "message": "   ",
-            },
-            headers=auth_headers(),
-        )
+        with TestClient(
+            app,
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "   ",
+                },
+                headers=auth_headers(),
+            )
 
         assert response.status_code == 422
 
@@ -113,6 +114,7 @@ def test_empty_message_is_rejected():
 
 
 def test_quota_error_returns_503():
+    clear_overrides()
     enable_auth_override()
 
     mock_chat_service = Mock()
@@ -128,13 +130,17 @@ def test_quota_error_returns_503():
     ] = lambda: mock_chat_service
 
     try:
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
-            headers=auth_headers(),
-        )
+        with TestClient(
+            app,
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "Hello",
+                },
+                headers=auth_headers(),
+            )
 
         assert response.status_code == 503
 
@@ -149,6 +155,7 @@ def test_quota_error_returns_503():
 
 
 def test_model_unavailable_returns_503():
+    clear_overrides()
     enable_auth_override()
 
     mock_chat_service = Mock()
@@ -164,13 +171,17 @@ def test_model_unavailable_returns_503():
     ] = lambda: mock_chat_service
 
     try:
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
-            headers=auth_headers(),
-        )
+        with TestClient(
+            app,
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "Hello",
+                },
+                headers=auth_headers(),
+            )
 
         assert response.status_code == 503
 
@@ -183,6 +194,7 @@ def test_model_unavailable_returns_503():
 
 
 def test_unexpected_error_is_safe():
+    clear_overrides()
     enable_auth_override()
 
     mock_chat_service = Mock()
@@ -198,13 +210,17 @@ def test_unexpected_error_is_safe():
     ] = lambda: mock_chat_service
 
     try:
-        response = client.post(
-            "/chat",
-            json={
-                "message": "Hello",
-            },
-            headers=auth_headers(),
-        )
+        with TestClient(
+            app,
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "Hello",
+                },
+                headers=auth_headers(),
+            )
 
         assert response.status_code == 500
 
