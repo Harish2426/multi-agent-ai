@@ -1,7 +1,10 @@
+from app.agents.logging_utils import (
+    log_agent_execution,
+)
 from app.dependencies import get_model_client
 from app.models import ModelClient
-from app.state import AgentState
 from app.prompts.coding_prompt import CODING_PROMPT
+from app.state import AgentState
 
 
 class CoderAgent:
@@ -15,6 +18,7 @@ class CoderAgent:
     def get_model(self) -> ModelClient:
         return self.model or get_model_client()
 
+    @log_agent_execution("coder")
     def run(
         self,
         state: AgentState,
@@ -25,7 +29,9 @@ class CoderAgent:
             research=state["research"],
         )
 
-        state["code"] = self.get_model().generate(prompt)
+        state["code"] = self.get_model().generate(
+            prompt
+        )
 
         state["messages"].append(
             "Coding completed."

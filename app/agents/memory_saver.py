@@ -1,9 +1,13 @@
+from app.agents.logging_utils import (
+    log_agent_execution,
+)
 from app.state import AgentState
 from database.memory import memory
 
 
 class MemorySaver:
 
+    @log_agent_execution("memory_saver")
     def run(
         self,
         state: AgentState,

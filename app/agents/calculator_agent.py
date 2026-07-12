@@ -1,10 +1,17 @@
+from app.agents.logging_utils import (
+    log_agent_execution,
+)
 from app.state import AgentState
 from tools.calculator import calculator_tool
 
 
 class CalculatorAgent:
 
-    def run(self, state: AgentState) -> AgentState:
+    @log_agent_execution("calculator")
+    def run(
+        self,
+        state: AgentState,
+    ) -> AgentState:
         try:
             result = calculator_tool.calculate(
                 state["user_input"]

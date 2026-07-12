@@ -1,7 +1,10 @@
+from app.agents.logging_utils import (
+    log_agent_execution,
+)
 from app.dependencies import get_model_client
 from app.models import ModelClient
-from app.state import AgentState
 from app.prompts.writer_prompt import WRITER_PROMPT
+from app.state import AgentState
 
 
 class WriterAgent:
@@ -15,6 +18,7 @@ class WriterAgent:
     def get_model(self) -> ModelClient:
         return self.model or get_model_client()
 
+    @log_agent_execution("writer")
     def run(
         self,
         state: AgentState,

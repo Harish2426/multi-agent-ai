@@ -1,8 +1,10 @@
+from app.agents.logging_utils import (
+    log_agent_execution,
+)
 from app.dependencies import get_model_client
 from app.models import ModelClient
-from app.state import AgentState
-
 from app.prompts.research_prompt import RESEARCH_PROMPT
+from app.state import AgentState
 from tools.search import search_tool
 
 
@@ -17,6 +19,7 @@ class ResearchAgent:
     def get_model(self) -> ModelClient:
         return self.model or get_model_client()
 
+    @log_agent_execution("researcher")
     def run(
         self,
         state: AgentState,
