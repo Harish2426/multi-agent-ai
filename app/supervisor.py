@@ -1,16 +1,12 @@
+import logging
+import re
+
 from app.dependencies import get_model_client
 from app.models import ModelClient
 from app.state import AgentState
-from app.prompts.supervisor_prompt import SUPERVISOR_PROMPT
 
 
-VALID_ROUTES = {
-    "planner",
-    "researcher",
-    "coder",
-    "reviewer",
-    "calculator",
-}
+logger = logging.getLogger(__name__)
 
 
 class SupervisorAgent:
@@ -26,161 +22,154 @@ class SupervisorAgent:
 
     def deterministic_route(
         self,
-        question: str,
+        user_input: str,
     ) -> str | None:
-        text = question.lower().strip()
 
-        reviewer_words = (
-            "review",
-            "audit",
-            "critique",
-            "inspect code",
-            "check code",
-            "security problems",
-            "security issues",
-            "code quality",
+        normalized_input = user_input.lower().strip()
+
+        arithmetic_pattern = re.compile(
+            r"^[\d\s\+\-\*\/\(\)\.\%]+$"
         )
 
-        coder_words = (
-            "write code",
-            "write a python",
-            "create a function",
-            "implement",
-            "debug",
-            "fix error",
-            "fix bug",
-            "refactor",
-            "program",
-            "build an api",
-            "build a rest api",
-        )
-
-        researcher_words = (
-            "latest",
-            "current",
-            "recent",
-            "news",
-            "research",
-            "developments",
-            "trends",
-            "compare",
-            "find information",
-        )
-
-        planner_words = (
-            "plan",
-            "roadmap",
-            "architecture",
-            "design",
-            "strategy",
-            "steps",
-            "approach",
-        )
-
-        # Local calculator routing.
-        # This keeps obvious arithmetic away from Gemini.
-        calculator_words = (
-            "calculate",
-            "calculator",
-            "compute",
-            "evaluate",
-        )
+        if arithmetic_pattern.fullmatch(
+            normalized_input
+        ):
+            return "calculator"
 
         if any(
-            word in text
-            for word in reviewer_words
+            keyword in normalized_input
+            for keyword in [
+                "calculate",
+                "calculator",
+                "what is the result of",
+            ]
+        ):
+            return "calculator"
+
+        if any(
+            keyword in normalized_input
+            for keyword in [
+                "review this code",
+                "review this python code",
+                "code review",
+                "review code",
+                "security problems",
+                "security issues",
+                "check this code",
+            ]
         ):
             return "reviewer"
 
         if any(
-            word in text
-            for word in coder_words
+            keyword in normalized_input
+            for keyword in [
+                "write code",
+                "write a python",
+                "write python",
+                "generate code",
+                "implement",
+                "create function",
+                "create a function",
+                "python function",
+            ]
         ):
             return "coder"
 
         if any(
-            word in text
-            for word in researcher_words
+            keyword in normalized_input
+            for keyword in [
+                "research",
+                "latest developments",
+                "latest information",
+                "find information",
+                "investigate",
+                "what are the latest",
+            ]
         ):
             return "researcher"
 
         if any(
-            word in text
-            for word in planner_words
+            keyword in normalized_input
+            for keyword in [
+                "plan",
+                "roadmap",
+                "strategy",
+                "steps",
+                "learning path",
+            ]
         ):
             return "planner"
 
-        if any(
-            word in text
-            for word in calculator_words
-        ):
-            return "calculator"
-
-        # Preserve your existing arithmetic detection.
-        arithmetic_characters = set(
-            "0123456789+-*/().% "
-        )
-
-        if (
-            text
-            and any(character.isdigit() for character in text)
-            and all(
-                character in arithmetic_characters
-                for character in text
-            )
-        ):
-            return "calculator"
-
         return None
+
+    def normalize_route(
+        self,
+        route: str,
+    ) -> str:
+
+        normalized_route = route.strip().lower()
+
+        valid_routes = {
+            "planner",
+            "researcher",
+            "coder",
+            "reviewer",
+            "calculator",
+        }
+
+        if normalized_route in valid_routes:
+            return normalized_route
+
+        return "planner"
 
     def llm_route(
         self,
-        question: str,
-    ) -> str | None:
-        prompt = SUPERVISOR_PROMPT.format(
-            question=question
+        user_input: str,
+    ) -> str:
+
+        prompt = (
+            "Route the following user request to exactly "
+            "one of these routes: planner, researcher, "
+            "coder, reviewer, calculator.\n\n"
+            "Return only the route name.\n\n"
+            "User request:\n"
+            f"{user_input}"
         )
 
-        decision = self.get_model().generate(
+        model_route = self.get_model().generate(
             prompt
         )
 
-        route = decision.strip().lower()
-
-        for valid_route in VALID_ROUTES:
-            if valid_route in route:
-                return valid_route
-
-        return None
+        return self.normalize_route(
+            model_route
+        )
 
     def run(
         self,
         state: AgentState,
     ) -> AgentState:
-        question = state["user_input"]
 
         route = self.deterministic_route(
-            question
+            state["user_input"]
         )
 
-        routing_method = "deterministic"
-
+        # Deterministic routes bypass the model.
         if route is None:
-            route = self.llm_route(question)
-            routing_method = "llm"
-
-        if route not in VALID_ROUTES:
-            route = "planner"
-            routing_method = "fallback"
+            route = self.llm_route(
+                state["user_input"]
+            )
 
         state["route"] = route
 
-        state["messages"].append(
-            f"Supervisor selected: {route}"
+        logger.info(
+            "route_selected "
+            "conversation_id=%s route=%s",
+            state.get("conversation_id"),
+            route,
         )
 
         state["messages"].append(
-            f"Routing method: {routing_method}"
+            f"Supervisor selected route: {route}"
         )
 
         return state

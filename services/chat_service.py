@@ -1,38 +1,24 @@
+import logging
+import time
 from uuid import uuid4
 
 from app.graph import graph
 from services.conversation_service import (
-    ConversationService,
     conversation_service,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
 
     def __init__(
         self,
-        conversation_service_instance: (
-            ConversationService | None
-        ) = None,
-        **kwargs,
+        conversation_service=conversation_service,
     ):
-        # Accept the dependency keyword used by FastAPI while
-        # preserving ChatService() compatibility.
-        injected_service = kwargs.pop(
-            "conversation_service",
-            None,
-        )
-
-        if kwargs:
-            unexpected = next(iter(kwargs))
-            raise TypeError(
-                f"Unexpected argument: {unexpected}"
-            )
-
         self.conversation_service = (
-            conversation_service_instance
-            or injected_service
-            or conversation_service
+            conversation_service
         )
 
     def create_state(
@@ -40,6 +26,7 @@ class ChatService:
         message: str,
         conversation_id: str,
     ) -> dict:
+
         return {
             "user_input": message,
             "conversation_id": conversation_id,
@@ -61,70 +48,130 @@ class ChatService:
         user_id: str | None = None,
     ) -> dict:
 
+        started_at = time.perf_counter()
+
         resolved_conversation_id = (
             conversation_id or str(uuid4())
         )
 
-        created_new_conversation = False
+        created_conversation = False
 
-        if user_id is not None:
+        logger.info(
+            "chat_started "
+            "conversation_id=%s user_id=%s",
+            resolved_conversation_id,
+            user_id,
+        )
 
-            if conversation_id is not None:
-                existing = (
-                    self.conversation_service
-                    .conversations
-                    .get_conversation(
-                        conversation_id,
-                        user_id=user_id,
-                    )
+        # ----------------------------------------------------------
+        # Legacy / unauthenticated compatibility path
+        # ----------------------------------------------------------
+
+        if user_id is None:
+
+            state = self.create_state(
+                message=message,
+                conversation_id=(
+                    resolved_conversation_id
+                ),
+            )
+
+            try:
+                result = graph.invoke(state)
+
+            except Exception:
+                duration_ms = (
+                    time.perf_counter()
+                    - started_at
+                ) * 1000
+
+                logger.exception(
+                    "chat_failed "
+                    "conversation_id=%s "
+                    "duration_ms=%.2f",
+                    resolved_conversation_id,
+                    duration_ms,
                 )
 
-                if existing is None:
-                    raise PermissionError(
-                        "Conversation not found."
-                    )
+                raise
 
-            else:
-                (
-                    self.conversation_service
-                    .conversations
-                    .create_conversation(
-                        conversation_id=(
-                            resolved_conversation_id
-                        ),
-                        title=(
-                            message[:60]
-                            or "New Conversation"
-                        ),
-                        user_id=user_id,
-                    )
+            duration_ms = (
+                time.perf_counter()
+                - started_at
+            ) * 1000
+
+            logger.info(
+                "chat_completed "
+                "conversation_id=%s "
+                "route=%s duration_ms=%.2f",
+                resolved_conversation_id,
+                result["route"],
+                duration_ms,
+            )
+
+            return {
+                "response": result["final_answer"],
+                "route": result["route"],
+                "messages": result["messages"],
+                "conversation_id": (
+                    resolved_conversation_id
+                ),
+            }
+
+        # ----------------------------------------------------------
+        # Authenticated path
+        # ----------------------------------------------------------
+
+        if conversation_id is None:
+
+            self.conversation_service\
+                .conversations\
+                .create_conversation(
+                    conversation_id=(
+                        resolved_conversation_id
+                    ),
+                    title=message,
+                    user_id=user_id,
                 )
 
-                created_new_conversation = True
+            created_conversation = True
+
+        else:
+
+            conversation = (
+                self.conversation_service
+                .conversations
+                .get_conversation(
+                    resolved_conversation_id,
+                    user_id=user_id,
+                )
+            )
+
+            if conversation is None:
+
+                logger.warning(
+                    "chat_access_denied "
+                    "conversation_id=%s user_id=%s",
+                    resolved_conversation_id,
+                    user_id,
+                )
+
+                raise PermissionError(
+                    "Conversation not found."
+                )
 
         state = self.create_state(
             message=message,
-            conversation_id=resolved_conversation_id,
+            conversation_id=(
+                resolved_conversation_id
+            ),
         )
 
         try:
             result = graph.invoke(state)
 
-        except Exception:
-            if (
-                user_id is not None
-                and created_new_conversation
-            ):
-                self.conversation_service.delete_conversation(
-                    resolved_conversation_id,
-                    user_id=user_id,
-                )
-
-            raise
-
-        if user_id is not None:
-            try:
-                self.conversation_service.add_message_pair(
+            self.conversation_service\
+                .add_message_pair(
                     conversation_id=(
                         resolved_conversation_id
                     ),
@@ -135,20 +182,70 @@ class ChatService:
                     route=result["route"],
                 )
 
-            except Exception:
-                if created_new_conversation:
-                    self.conversation_service.delete_conversation(
+        except Exception:
+
+            # Only conversations created by this chat
+            # operation are removed on failure.
+            #
+            # Existing conversations must survive graph
+            # and persistence failures.
+
+            if created_conversation:
+
+                try:
+                    self.conversation_service\
+                        .delete_conversation(
+                            resolved_conversation_id,
+                            user_id=user_id,
+                        )
+
+                except Exception:
+                    logger.exception(
+                        "chat_cleanup_failed "
+                        "conversation_id=%s "
+                        "user_id=%s",
                         resolved_conversation_id,
-                        user_id=user_id,
+                        user_id,
                     )
 
-                raise
+            duration_ms = (
+                time.perf_counter()
+                - started_at
+            ) * 1000
+
+            logger.exception(
+                "chat_failed "
+                "conversation_id=%s user_id=%s "
+                "duration_ms=%.2f",
+                resolved_conversation_id,
+                user_id,
+                duration_ms,
+            )
+
+            raise
+
+        duration_ms = (
+            time.perf_counter()
+            - started_at
+        ) * 1000
+
+        logger.info(
+            "chat_completed "
+            "conversation_id=%s user_id=%s "
+            "route=%s duration_ms=%.2f",
+            resolved_conversation_id,
+            user_id,
+            result["route"],
+            duration_ms,
+        )
 
         return {
             "response": result["final_answer"],
             "route": result["route"],
             "messages": result["messages"],
-            "conversation_id": resolved_conversation_id,
+            "conversation_id": (
+                resolved_conversation_id
+            ),
         }
 
 
