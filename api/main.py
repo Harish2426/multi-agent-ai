@@ -1,7 +1,7 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from prometheus_client import generate_latest
 
 from api.middleware.request_logging import (
     RequestLoggingMiddleware,
@@ -15,43 +15,60 @@ from api.routes.chat_routes import (
 from api.routes.conversation_routes import (
     router as conversation_router,
 )
-from api.routes.system_routes import (
-    router as system_router,
-)
+
 from app.config import settings
 from app.logging_config import configure_logging
-from database.health import (
-    check_database_readiness,
-)
 
+
+# ---------------------------------------------------------
+# Configure logging before creating the application
+# ---------------------------------------------------------
 
 configure_logging()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.database_ready = False
-
-    check_database_readiness()
-
-    app.state.database_ready = True
-
-    yield
-
-    app.state.database_ready = False
-
+# ---------------------------------------------------------
+# FastAPI application
+# ---------------------------------------------------------
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    lifespan=lifespan,
+    description="""
+Multi-Agent AI API
+
+Features
+
+• JWT Authentication
+
+• Multi-Agent LangGraph workflow
+
+• Conversation persistence
+
+• Long-term memory
+
+• Structured logging
+
+• Request tracing
+
+• Prometheus metrics
+""",
+    contact={
+        "name": "Jami",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
+
+# ---------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------
 
 app.add_middleware(
-    RequestLoggingMiddleware
+    RequestLoggingMiddleware,
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,7 +79,110 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------
+# Routers
+# ---------------------------------------------------------
+
 app.include_router(auth_router)
+
 app.include_router(chat_router)
+
 app.include_router(conversation_router)
-app.include_router(system_router)
+
+
+# ---------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------
+
+@app.get(
+    "/metrics",
+    include_in_schema=False,
+)
+def metrics():
+
+    return Response(
+        content=generate_latest(),
+        media_type="text/plain",
+    )
+
+
+# ---------------------------------------------------------
+# Root
+# ---------------------------------------------------------
+
+@app.get(
+    "/",
+    tags=["System"],
+)
+def root():
+
+    return {
+        "message": "Multi-Agent AI API is running",
+        "version": settings.app_version,
+    }
+
+
+# ---------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------
+
+@app.get(
+    "/health",
+    tags=["System"],
+)
+def health():
+
+    return {
+        "status": "ok",
+    }
+
+
+# ---------------------------------------------------------
+# Readiness Check
+# ---------------------------------------------------------
+
+@app.get(
+    "/ready",
+    tags=["System"],
+)
+def ready():
+
+    return {
+        "status": "ready",
+        "database": "available",
+    }
+
+
+# ---------------------------------------------------------
+# Startup Event
+# ---------------------------------------------------------
+
+@app.on_event("startup")
+def startup():
+
+    # Reserved for future startup initialization.
+    # Example:
+    #
+    # - warm AI models
+    # - verify database connectivity
+    # - initialize vector store
+    #
+    pass
+
+
+# ---------------------------------------------------------
+# Shutdown Event
+# ---------------------------------------------------------
+
+@app.on_event("shutdown")
+def shutdown():
+
+    # Reserved for graceful shutdown tasks.
+    #
+    # Example:
+    #
+    # - close database pools
+    # - flush metrics
+    # - close model clients
+    #
+    pass

@@ -4,6 +4,9 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from app.logging_context import get_request_id
+from app.metrics import AGENT_DURATION
+
 
 def log_agent_execution(
     agent_name: str,
@@ -13,6 +16,7 @@ def log_agent_execution(
     ):
         @wraps(function)
         def wrapper(*args, **kwargs):
+
             logger = logging.getLogger(
                 function.__module__
             )
@@ -21,12 +25,9 @@ def log_agent_execution(
 
             state = None
 
-            # Normal agent method:
-            # run(self, state)
             if len(args) >= 2:
                 state = args[1]
 
-            # Support state passed by keyword.
             elif "state" in kwargs:
                 state = kwargs["state"]
 
@@ -37,29 +38,45 @@ def log_agent_execution(
                     "conversation_id"
                 )
 
+            request_id = get_request_id()
+
             logger.info(
                 "agent_started "
-                "agent=%s conversation_id=%s",
+                "request_id=%s "
+                "agent=%s "
+                "conversation_id=%s",
+                request_id,
                 agent_name,
                 conversation_id,
             )
 
             try:
+
                 result = function(
                     *args,
                     **kwargs,
                 )
 
             except Exception:
+
                 duration_ms = (
                     time.perf_counter()
                     - started_at
                 ) * 1000
 
+                AGENT_DURATION.labels(
+                    agent_name
+                ).observe(
+                    duration_ms / 1000
+                )
+
                 logger.exception(
                     "agent_failed "
-                    "agent=%s conversation_id=%s "
+                    "request_id=%s "
+                    "agent=%s "
+                    "conversation_id=%s "
                     "duration_ms=%.2f",
+                    request_id,
                     agent_name,
                     conversation_id,
                     duration_ms,
@@ -72,10 +89,19 @@ def log_agent_execution(
                 - started_at
             ) * 1000
 
+            AGENT_DURATION.labels(
+                agent_name
+            ).observe(
+                duration_ms / 1000
+            )
+
             logger.info(
                 "agent_completed "
-                "agent=%s conversation_id=%s "
+                "request_id=%s "
+                "agent=%s "
+                "conversation_id=%s "
                 "duration_ms=%.2f",
+                request_id,
                 agent_name,
                 conversation_id,
                 duration_ms,

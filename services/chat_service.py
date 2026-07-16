@@ -2,11 +2,13 @@ import logging
 import time
 from uuid import uuid4
 
+
 from app.graph import graph
+from app.logging_context import get_request_id
+from app.metrics import CHAT_COUNT
 from services.conversation_service import (
     conversation_service,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,9 @@ class ChatService:
     ) -> dict:
 
         started_at = time.perf_counter()
+        CHAT_COUNT.inc()
+        request_id = get_request_id()
+        
 
         resolved_conversation_id = (
             conversation_id or str(uuid4())
@@ -58,28 +63,30 @@ class ChatService:
 
         logger.info(
             "chat_started "
-            "conversation_id=%s user_id=%s",
+            "request_id=%s "
+            "conversation_id=%s "
+            "user_id=%s",
+            request_id,
             resolved_conversation_id,
             user_id,
         )
 
-        # ----------------------------------------------------------
+        # --------------------------------------------------
         # Legacy / unauthenticated compatibility path
-        # ----------------------------------------------------------
+        # --------------------------------------------------
 
         if user_id is None:
 
             state = self.create_state(
                 message=message,
-                conversation_id=(
-                    resolved_conversation_id
-                ),
+                conversation_id=resolved_conversation_id,
             )
 
             try:
                 result = graph.invoke(state)
 
             except Exception:
+
                 duration_ms = (
                     time.perf_counter()
                     - started_at
@@ -87,8 +94,10 @@ class ChatService:
 
                 logger.exception(
                     "chat_failed "
+                    "request_id=%s "
                     "conversation_id=%s "
                     "duration_ms=%.2f",
+                    request_id,
                     resolved_conversation_id,
                     duration_ms,
                 )
@@ -102,8 +111,11 @@ class ChatService:
 
             logger.info(
                 "chat_completed "
+                "request_id=%s "
                 "conversation_id=%s "
-                "route=%s duration_ms=%.2f",
+                "route=%s "
+                "duration_ms=%.2f",
+                request_id,
                 resolved_conversation_id,
                 result["route"],
                 duration_ms,
@@ -113,26 +125,20 @@ class ChatService:
                 "response": result["final_answer"],
                 "route": result["route"],
                 "messages": result["messages"],
-                "conversation_id": (
-                    resolved_conversation_id
-                ),
+                "conversation_id": resolved_conversation_id,
             }
 
-        # ----------------------------------------------------------
+        # --------------------------------------------------
         # Authenticated path
-        # ----------------------------------------------------------
+        # --------------------------------------------------
 
         if conversation_id is None:
 
-            self.conversation_service\
-                .conversations\
-                .create_conversation(
-                    conversation_id=(
-                        resolved_conversation_id
-                    ),
-                    title=message,
-                    user_id=user_id,
-                )
+            self.conversation_service.conversations.create_conversation(
+                conversation_id=resolved_conversation_id,
+                title=message,
+                user_id=user_id,
+            )
 
             created_conversation = True
 
@@ -151,7 +157,10 @@ class ChatService:
 
                 logger.warning(
                     "chat_access_denied "
-                    "conversation_id=%s user_id=%s",
+                    "request_id=%s "
+                    "conversation_id=%s "
+                    "user_id=%s",
+                    request_id,
                     resolved_conversation_id,
                     user_id,
                 )
@@ -162,48 +171,39 @@ class ChatService:
 
         state = self.create_state(
             message=message,
-            conversation_id=(
-                resolved_conversation_id
-            ),
+            conversation_id=resolved_conversation_id,
         )
 
         try:
+
             result = graph.invoke(state)
 
-            self.conversation_service\
-                .add_message_pair(
-                    conversation_id=(
-                        resolved_conversation_id
-                    ),
-                    user_content=message,
-                    assistant_content=(
-                        result["final_answer"]
-                    ),
-                    route=result["route"],
-                )
+            self.conversation_service.add_message_pair(
+                conversation_id=resolved_conversation_id,
+                user_content=message,
+                assistant_content=result["final_answer"],
+                route=result["route"],
+            )
 
         except Exception:
-
-            # Only conversations created by this chat
-            # operation are removed on failure.
-            #
-            # Existing conversations must survive graph
-            # and persistence failures.
 
             if created_conversation:
 
                 try:
-                    self.conversation_service\
-                        .delete_conversation(
-                            resolved_conversation_id,
-                            user_id=user_id,
-                        )
+
+                    self.conversation_service.delete_conversation(
+                        resolved_conversation_id,
+                        user_id=user_id,
+                    )
 
                 except Exception:
+
                     logger.exception(
                         "chat_cleanup_failed "
+                        "request_id=%s "
                         "conversation_id=%s "
                         "user_id=%s",
+                        request_id,
                         resolved_conversation_id,
                         user_id,
                     )
@@ -215,8 +215,11 @@ class ChatService:
 
             logger.exception(
                 "chat_failed "
-                "conversation_id=%s user_id=%s "
+                "request_id=%s "
+                "conversation_id=%s "
+                "user_id=%s "
                 "duration_ms=%.2f",
+                request_id,
                 resolved_conversation_id,
                 user_id,
                 duration_ms,
@@ -231,8 +234,12 @@ class ChatService:
 
         logger.info(
             "chat_completed "
-            "conversation_id=%s user_id=%s "
-            "route=%s duration_ms=%.2f",
+            "request_id=%s "
+            "conversation_id=%s "
+            "user_id=%s "
+            "route=%s "
+            "duration_ms=%.2f",
+            request_id,
             resolved_conversation_id,
             user_id,
             result["route"],
@@ -243,9 +250,7 @@ class ChatService:
             "response": result["final_answer"],
             "route": result["route"],
             "messages": result["messages"],
-            "conversation_id": (
-                resolved_conversation_id
-            ),
+            "conversation_id": resolved_conversation_id,
         }
 
 

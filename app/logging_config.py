@@ -1,29 +1,51 @@
+import json
 import logging
-import sys
+from datetime import datetime, UTC
 
-from app.config import settings
+from app.logging_context import get_request_id
 
 
-def configure_logging() -> None:
-    root_logger = logging.getLogger()
+class JsonFormatter(logging.Formatter):
 
-    if root_logger.handlers:
-        return
+    def format(
+        self,
+        record: logging.LogRecord,
+    ) -> str:
 
-    handler = logging.StreamHandler(sys.stdout)
+        log = {
+            "timestamp": datetime.now(
+                UTC
+            ).isoformat(),
 
-    formatter = logging.Formatter(
-        "%(asctime)s "
-        "%(levelname)s "
-        "%(name)s "
-        "%(message)s"
+            "level": record.levelname,
+
+            "logger": record.name,
+
+            "message": record.getMessage(),
+
+            "request_id": get_request_id(),
+        }
+
+        if record.exc_info:
+            log["exception"] = self.formatException(
+                record.exc_info
+            )
+
+        return json.dumps(log)
+
+
+def configure_logging():
+
+    handler = logging.StreamHandler()
+
+    handler.setFormatter(
+        JsonFormatter()
     )
 
-    handler.setFormatter(formatter)
+    root = logging.getLogger()
 
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
+    root.handlers.clear()
 
+    root.addHandler(handler)
 
-def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(name)
+    root.setLevel(logging.INFO)
