@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    container_name: multi-agent-api
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./database:/app/database
+    restart: unless-stopped
