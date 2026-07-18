@@ -2,28 +2,23 @@ import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
-
 from alembic import context
+
 from database.sqlite import Base
-# Alembic Config object
+
 config = context.config
 
-# Override sqlalchemy.url with DATABASE_URL if it exists
 database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
-# Configure logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Metadata for autogenerate
 target_metadata = Base.metadata
 
 
-def run_migrations_offline() -> None:
-    """Run migrations in offline mode."""
-
+def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
 
     context.configure(
@@ -31,18 +26,15 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
-        dialect_opts={"paramstyle": "named"},
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Run migrations in online mode."""
-
+def run_migrations_online():
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
